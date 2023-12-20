@@ -8,17 +8,18 @@ use crate::peer_data::*;
 use nanorand::{Rng, BufferedRng, wyrand::WyRand};
 
 /*Utilities */
-use anyhow::{bail, Context, Result, Error};
-use log::{debug, error, info, warn};
+use anyhow::Result;
     
 /*Async/net libraries */
-use futures::stream::FuturesUnordered;
-use futures::{StreamExt, select};
 use tokio::net::UdpSocket;
 use std::net::SocketAddr;
 
 #[derive(Debug)]
 pub enum PacketError{
+    NoIdError,
+    NoTypeError,
+    NoLengthError,
+    NoBodyError,
     NoSignatureError,
     InvalidIdError,
     InvalidFormatError,
@@ -28,6 +29,10 @@ pub enum PacketError{
 impl std::fmt::Display for PacketError{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            PacketError::NoIdError => write!(f, "Packet builder failed"),
+            PacketError::NoTypeError => write!(f, "Packet builder failed"),
+            PacketError::NoLengthError => write!(f, "Packet builder failed"),
+            PacketError::NoBodyError => write!(f, "Packet builder failed"),
             PacketError::NoSignatureError => write!(f, "Unsigned Packet"),
             PacketError::InvalidIdError => write!(f, "Packet has invalid Id"),
             PacketError::InvalidFormatError => write!(f, "Packet has invalid format"),
@@ -56,7 +61,7 @@ pub enum PacketType{
 }
 
 impl PacketType {
-    fn from_u8(val: u8)-> Result<PacketType>{
+    fn from_u8(val: u8)-> Result<PacketType, PacketError>{
         match val {
             0 => return Ok(PacketType::NoOp),
             1 => return Ok(PacketType::Error),
@@ -71,7 +76,7 @@ impl PacketType {
             131 => return Ok(PacketType::RootReply),
             132 => return Ok(PacketType::Datum),
             133 => return Ok(PacketType::NatTraversalReply),
-            _ => return Err(Error::msg("Unknown packet type")),
+            _ => return Err(PacketError::NoTypeError),
         }
     }
 }
@@ -96,19 +101,19 @@ pub struct PacketBuilder{
 }
 
 impl PacketBuilder {
-    pub fn build(&self)-> Result<Packet>{
+    pub fn build(&self)-> Result<Packet, PacketError>{
         let Some(id) = self.id else {
-            return Err(Error::msg("No id for packet"));
+            return Err(PacketError::InvalidIdError);
         };
         let Some(packet_type) = self.packet_type else {
-            return Err(Error::msg("No type for packet"));
+            return Err(PacketError::NoTypeError);
         };
 
         let Some(length) = self.length else {
-            return Err(Error::msg("No body length for packet"));
+            return Err(PacketError::NoLengthError);
         };
         let Some(body) = self.body.to_owned() else {
-            return Err(Error::msg("No body for packet"))
+            return Err(PacketError::NoBodyError)
         };
 
         Ok(Packet {
@@ -348,6 +353,7 @@ impl Packet {
             
         self.send_to_addr(sock, &addr).await
     }
+
 
     pub async fn send_hello(sock: &UdpSocket,
                 peer_addr: &SocketAddr)->Result<[u8;4], PeerError>{

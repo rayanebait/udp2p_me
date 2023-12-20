@@ -1,4 +1,7 @@
-use std::os::unix::net::SocketAddr;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use futures::future::pending;
 
 use crate::congestion_handler::*;
 use crate::packet::*;
@@ -9,20 +12,29 @@ pub enum PacketState {
     Received
 }
 
-pub fn handle_packet(packet: Packet, socket_addr: SocketAddr, pending: &mut PendingResponseIds){
-    match pending.search_id(&packet){
-        Ok(peer) => handle_response_packet(packet, socket_addr, pending),
-        Err(e)=> handle_request_packet(packet,  socket_addr, pending),
+pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
+                        pending_ids: Arc<Mutex<PendingIds>>,
+                         receive_queue: Arc<Mutex<ReceiveQueue>>,
+                          send_queue: Arc<Mutex<SendQueue>>){
+    
+    {
+        let mut pending_ids_guard = 
+            match pending_ids.lock() {
+                Ok(guard) => guard,
+                Err(PoisonError)=> panic!("Poisoned Ids Mutex"),
+            };
+
     }
+
 }
 
 fn handle_request_packet(packet: Packet, socket_addr: SocketAddr,
-                                     pending: &mut PendingResponseIds){
+                                     pending: &mut PendingIds){
 
 }
 
 fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
-                                     pending: &mut PendingResponseIds){
+                                     pending: &mut PendingIds){
     if !packet.is_response() {
         return;
     }

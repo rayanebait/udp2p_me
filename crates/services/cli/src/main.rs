@@ -22,6 +22,12 @@ enum Commands {
         #[arg(short = 'u', long)]
         host: Option<String>,
     },
+    FetchPeerData{
+        /// Url of peers page
+        #[arg(short = 'u', long)]
+        host: Option<String>,
+    },
+
 }
 
 fn main() {
@@ -32,6 +38,7 @@ fn main() {
         Some(Commands::FetchPeers { host }) => {
             println!("{:?}", host); // if host is not provided in correct form, the app will tell the user
         }
+        Some(Commands::)
         None => {
             println!("No subcommand");
         }

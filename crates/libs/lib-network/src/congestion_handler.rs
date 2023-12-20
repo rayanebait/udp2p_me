@@ -29,6 +29,14 @@ impl ActiveSockets {
     }
 }
 
+pub struct ReceiveQueue {
+    packets_to_treat: Vec<Packet>,
+
+}
+pub struct SendQueue {
+    packets_to_send: Vec<Packet>,
+}
+
 pub struct ActivePeers {
     peers: Vec<PeerData>,
     addr_map: HashMap<SocketAddr, PeerData>,
@@ -51,11 +59,6 @@ impl ActivePeers {
     }
 
 }
-#[derive(Default)]
-pub struct PendingResponseIds{
-    pending_packet_ids: Vec<[u8;4]>,
-    id_to_peer_map: HashMap<[u8;4], SocketAddr>,
-}
 
 
 
@@ -76,19 +79,25 @@ impl std::fmt::Display for CongestionHandlerError {
     }
 }
 
+#[derive(Default)]
+pub struct PendingIds{
+    pending_packet_ids: Vec<[u8;4]>,
+    id_to_index: HashMap<[u8;4], usize>,
+    nb_ids: usize,
+}
 
-impl PendingResponseIds{
+impl PendingIds{
     pub fn build_mutex()->Arc<Mutex<Self>>{
-        Arc::new(Mutex::new(PendingResponseIds::default()))
+        Arc::new(Mutex::new(PendingIds::default()))
     }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
     pub fn add_packet_id_raw(&mut self, id: [u8;4], peer_addr: &SocketAddr){
+        
 
-        let mut ids = &mut self.pending_packet_ids;
-        ids.push(id.clone());
+        self.pending_packet_ids.push(id.clone());
 
-        let mut map = &mut self.id_to_peer_map;
-        map.insert(id.clone(), peer_addr.clone());
+        self.id_to_index.insert(id.clone(), self.nb_ids);
+        self.nb_ids+=1;
     }
 
 

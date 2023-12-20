@@ -25,7 +25,6 @@ pub mod import_export{
     use crate::peer_data::*;
     use crate::packet::*;
     use crate::handle_packet::*;
-    use crate::handle_packet::*;
     
     pub enum Error{
         Packet(PacketError),
@@ -39,12 +38,12 @@ pub mod import_export{
     }
 
     pub async fn handshake_addr(sock: Arc<UdpSocket>, peer_addr: SocketAddr,
-                    pending: Arc<Mutex<PendingResponseIds>>,
+                    pending: Arc<Mutex<PendingIds>>,
                     active_peers: Arc<Mutex<ActivePeers>>)->Result<(), PeerError>{
 
         /*Launch async task*/
         let handle = 
-        tokio::spawn(async move{
+            tokio::spawn(async move{
             let Ok(packet_id) 
                 = Packet::send_hello(&sock, &peer_addr.clone()).await 
                 else{
@@ -59,7 +58,13 @@ pub mod import_export{
             arc_pending_guard.add_packet_id_raw(packet_id , &peer_addr.clone());
 
             /*Unlock the ids for other tasks */
+            /*It used to not work and the actions taken on 
+            a lock should be done in a sub {} scope, it should
+            work now*/
             drop(arc_pending_guard);
+            /*Remark: add_packet_id is not async so that the mutex guard 
+            is not sent in an async where it could be awaited and create 
+            a deadlock */
 
             /*
                 waiting.iter().next() launches its elements (functions)
@@ -104,7 +109,7 @@ pub mod import_export{
     }
 
     pub async fn handshake(sock: Arc<UdpSocket>, peer: PeerData,
-                    pending: Arc<Mutex<PendingResponseIds>>,
+                    pending: Arc<Mutex<PendingIds>>,
                     active_peers: Arc<Mutex<ActivePeers>>)->Result<(), PeerError>{
 
         tokio::spawn(async move {
@@ -125,7 +130,7 @@ pub mod import_export{
     pub async 
     fn register(sock: Arc<UdpSocket>, root: Option<[u8;32]>,
              public_key: Option<[u8;64]>,
-            pending: Arc<Mutex<PendingResponseIds>>,
+            pending: Arc<Mutex<PendingIds>>,
             active_peers: Arc<Mutex<ActivePeers>>)->Result<(),PeerError>{
 
         let mut server = PeerData::new();
