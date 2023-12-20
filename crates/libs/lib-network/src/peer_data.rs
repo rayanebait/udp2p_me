@@ -32,6 +32,7 @@ impl std::fmt::Display for PeerError{
         }
     }
 }
+
 pub struct ActiveAddrMap{
     map: Rc<HashMap<SocketAddr, PeerData>>,
 }

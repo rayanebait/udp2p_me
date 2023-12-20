@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::net::{UdpSocket, SocketAddr};
 
 use std::sync::{Mutex, Arc};
+use std::collections::VecDeque;
 
 use lib_web::discovery::Peer;
-use crate::peer_data::*;
+use crate::{peer_data::*, packet};
 use crate::packet::*;
 
 #[derive(Default)]
@@ -30,17 +31,47 @@ impl ActiveSockets {
 }
 
 pub struct ReceiveQueue {
-    packets_to_treat: Vec<Packet>,
+    packets_to_treat: VecDeque<(Packet, SocketAddr)>,
 
 }
+
+impl ReceiveQueue {
+    pub fn add_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
+        self.packets_to_treat.push_back((packet, sock_addr));
+    }
+
+    pub fn pop_packet(&mut self){
+        self.packets_to_treat.pop_front();
+    }
+
+    pub fn is_empty(&self)->bool{
+        self.packets_to_treat.is_empty()
+    }
+}
+
 pub struct SendQueue {
-    packets_to_send: Vec<Packet>,
+    packets_to_send: VecDeque<(Packet, SocketAddr)>,
+}
+
+impl SendQueue {
+    pub fn add_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
+        self.packets_to_send.push_back((packet, sock_addr));
+    }
+
+    pub fn pop_packet(&mut self){
+        self.packets_to_send.pop_front();
+    }
+
+    pub fn is_empty(&self)->bool{
+        self.packets_to_send.is_empty()
+    }
 }
 
 pub struct ActivePeers {
     peers: Vec<PeerData>,
     addr_map: HashMap<SocketAddr, PeerData>,
 }
+
 impl ActivePeers {
 
     fn build_mutex()->Arc<Mutex<Self>>{
@@ -63,9 +94,10 @@ impl ActivePeers {
 
 
 #[derive(Debug)]
-enum CongestionHandlerError {
+pub enum CongestionHandlerError {
     NoPeerWithAddrError,
     NoPacketWithIdError,
+    AddrAndIdDontMatchError,
 }
 
 impl std::fmt::Display for CongestionHandlerError {
@@ -75,6 +107,8 @@ impl std::fmt::Display for CongestionHandlerError {
                          write!(f, "No pending response for given Id"),
             CongestionHandlerError::NoPeerWithAddrError=>
                          write!(f, "No peer with given socket address"),
+            CongestionHandlerError::AddrAndIdDontMatchError=>
+                         write!(f, "Id and address from packet don't match"),
         }        
     }
 }
@@ -82,7 +116,7 @@ impl std::fmt::Display for CongestionHandlerError {
 #[derive(Default)]
 pub struct PendingIds{
     pending_packet_ids: Vec<[u8;4]>,
-    id_to_index: HashMap<[u8;4], usize>,
+    id_to_index: HashMap<[u8;4], (usize, SocketAddr)>,
     nb_ids: usize,
 }
 
@@ -93,49 +127,44 @@ impl PendingIds{
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
     pub fn add_packet_id_raw(&mut self, id: [u8;4], peer_addr: &SocketAddr){
         
-
         self.pending_packet_ids.push(id.clone());
 
-        self.id_to_index.insert(id.clone(), self.nb_ids);
+        self.id_to_index.insert(id.clone(), (self.nb_ids, peer_addr.clone()));
         self.nb_ids+=1;
     }
 
 
     /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]){
-        let mut pending_packet_ids =&mut self.pending_packet_ids;
-        let packet_id_ind = pending_packet_ids.iter()
-                                .position(
-                                    |id| id==packet_id
-                                );
-                            // .binary_seaArch_by(
-                            //     |x| (x).cmp(packet_id)
-                            // );
-        match packet_id_ind {
-            Some(packet_id_ind) => pending_packet_ids.remove(packet_id_ind),
+        let entry = self.id_to_index.get(packet_id);
+    
+        match entry {
+            Some((ind, sock_addr)) => {
+                self.pending_packet_ids.remove(*ind);
+                self.id_to_index.remove(packet_id);
+                if self.nb_ids > 0 {
+                    self.nb_ids-=1;
+                }
+                return;
+            },
             /*Simply return if Id doesn't match any */
             None => return,
         };
     }   
 
-    pub fn search_id_raw(&self, packet_id: &[u8;4])->Result<SocketAddr, CongestionHandlerError>{
-        let peer_data = match self.pending_packet_ids.contains(packet_id){
-            true => self.id_to_peer_map.get(packet_id).unwrap(),
-            false => return Err(CongestionHandlerError::NoPacketWithIdError),
+    pub fn search_id_raw(&self, packet_id: &[u8;4])->Result<(SocketAddr), CongestionHandlerError>{
+        let id_ind = self.id_to_index.get(packet_id);
+
+        match id_ind {
+            Some((ind, sock_addr)) => return Ok(sock_addr.clone()),
+            None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
-
-        Ok(peer_data.clone())
-
     }
 
     pub fn search_id(&self, packet: &Packet)->Result<SocketAddr, CongestionHandlerError>{
         let id = packet.get_id();
-        let peer_data = match self.pending_packet_ids.contains(id){
-            true => self.id_to_peer_map.get(id).unwrap(),
-            false => return Err(CongestionHandlerError::NoPacketWithIdError),
-        };
 
-        Ok(peer_data.clone())
+        self.search_id_raw(id)
     }
 }
 

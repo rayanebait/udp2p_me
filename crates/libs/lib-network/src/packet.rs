@@ -7,6 +7,7 @@ use crate::peer_data::*;
 /*For the id generation */
 use nanorand::{Rng, BufferedRng, wyrand::WyRand};
 
+use sha2::{Sha256, Digest};
 /*Utilities */
 use anyhow::Result;
     
@@ -255,6 +256,8 @@ impl Packet {
     an invalid packet doesn't make the program
         panic */
     pub fn from_bytes(raw_packet: &mut Vec<u8>)->Self{
+        /*Should check len */
+        todo!();
         let id : [u8;4]= raw_packet.drain(0..=3).as_slice().try_into()
                             .unwrap();
         let packet_type= PacketType::from_u8(
@@ -316,8 +319,9 @@ impl Packet {
 
     pub async fn recv_from(sock: &UdpSocket)
                             ->Result<(SocketAddr ,Packet), PacketError>{
-        /*1095=4+1+2+1024+64 being the maximum packet size*/
-        let mut packet_buf: [u8; 1095] = [0;1095];
+        /*1095=4+1+2+(32+1024)+64 being the maximum packet size*/
+        let mut packet_buf: [u8; 1127] = [0;1127];
+
         let (recvd_packet_size, peer_addr) =
                         sock.recv_from(&mut packet_buf).await.unwrap();
 
@@ -420,9 +424,44 @@ impl Packet {
         
     }
 
-    /*Verify the hash of a Packet during p2p export/import */
-    pub async fn verify_hash(&self){
+    pub async fn send_datum(sock: &UdpSocket, id: [u8;4],
+            peer_addr: &SocketAddr, datum: [u8;1024], hash: [u8; 32])->Result<(), PeerError>{
 
+        let body = {
+            let mut body : Vec<u8> = hash.to_vec();
+            body.append(&mut datum.to_vec());
+            body
+        };
+        let datum_packet = PacketBuilder::new()
+                                                .set_id(id)
+                                                .packet_type(PacketType::Datum)
+                                                .body(body)
+                                                .build()
+                                                .unwrap();
+
+        match datum_packet.send_to_addr(sock, peer_addr).await {
+            Ok(_)=> Ok(()),
+            Err(e)=>Err(e),
+        }
+
+    }
+
+    /*Verify the hash of a Packet during p2p export/import */
+    pub fn valid_hash(&self)->bool{
+        let body = self.get_body();
+        let given_hash = &body.as_slice()[0..32];
+
+        let calculated_hash = {
+            let data = &body.as_slice()[32..(body.len())];
+            let mut hasher = Sha256::new();
+            hasher.update(data);
+
+            let mut calculated_hash = <[u8; 32]>::default();
+            calculated_hash.copy_from_slice(hasher.finalize().as_slice());
+            calculated_hash
+        };
+
+        calculated_hash == given_hash
     }
 
 }
