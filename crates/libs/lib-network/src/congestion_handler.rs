@@ -32,7 +32,6 @@ impl ActiveSockets {
 
 pub struct ReceiveQueue {
     packets_to_treat: VecDeque<(Packet, SocketAddr)>,
-
 }
 
 impl ReceiveQueue {
@@ -115,9 +114,7 @@ impl std::fmt::Display for CongestionHandlerError {
 
 #[derive(Default)]
 pub struct PendingIds{
-    pending_packet_ids: Vec<[u8;4]>,
-    id_to_index: HashMap<[u8;4], (usize, SocketAddr)>,
-    nb_ids: usize,
+    id_to_addr: HashMap<[u8;4], SocketAddr>,
 }
 
 impl PendingIds{
@@ -126,34 +123,17 @@ impl PendingIds{
     }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
     pub fn add_packet_id_raw(&mut self, id: [u8;4], peer_addr: &SocketAddr){
-        
-        self.pending_packet_ids.push(id.clone());
-
-        self.id_to_index.insert(id.clone(), (self.nb_ids, peer_addr.clone()));
-        self.nb_ids+=1;
+        self.id_to_addr.insert(id.clone(),  peer_addr.clone());
     }
 
 
     /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]){
-        let entry = self.id_to_index.get(packet_id);
-    
-        match entry {
-            Some((ind, sock_addr)) => {
-                self.pending_packet_ids.remove(*ind);
-                self.id_to_index.remove(packet_id);
-                if self.nb_ids > 0 {
-                    self.nb_ids-=1;
-                }
-                return;
-            },
-            /*Simply return if Id doesn't match any */
-            None => return,
-        };
+        self.id_to_addr.remove(packet_id);
     }   
 
     pub fn search_id_raw(&self, packet_id: &[u8;4])->Result<(SocketAddr), CongestionHandlerError>{
-        let id_ind = self.id_to_index.get(packet_id);
+        let id_ind = self.id_to_addr.get(packet_id);
 
         match id_ind {
             Some((ind, sock_addr)) => return Ok(sock_addr.clone()),

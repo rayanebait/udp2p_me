@@ -7,7 +7,7 @@ use crate::congestion_handler::*;
 use crate::packet::*;
 use crate::peer_data::PeerData;
 
-pub enum Action {
+pub enum Action{
     A,
     /*A hashmap is available in ActivePeers: SocketAddr to Peer */
     SendHelloReply(SocketAddr),
@@ -58,7 +58,7 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
 
                         if sock_addr != socket_addr {
                             addr_match_id = Err(CongestionHandlerError::AddrAndIdDontMatchError);
-                        }else {
+                        } else {
                             addr_match_id= Ok(sock_addr);
                         }
                         addr_match_id
