@@ -150,15 +150,71 @@ impl PacketBuilder {
                                 .build();
         hello_packet.unwrap()
     }
+    pub fn public_key_reply_packet(public_key: Option<[u8;64]>, id: [u8;4])->Packet{
+        let public_key = match public_key{
+            Some(public_key)=> public_key.to_vec(),
+            None => vec![],
+        };
+        let public_key_packet = PacketBuilder::new()
+                        .set_id(id)
+                        .body(public_key)
+                        .packet_type(PacketType::PublicKeyReply)
+                        .build();
+
+        public_key_packet.unwrap()
+    }
+    pub fn public_key_packet(public_key: Option<[u8;64]>)->Packet{
+        let public_key = match public_key{
+            Some(public_key)=> public_key.to_vec(),
+            None => vec![],
+        };
+
+        let public_key_packet = PacketBuilder::new()
+                        .gen_id()
+                        .body(public_key)
+                        .packet_type(PacketType::PublicKey)
+                        .build();
+
+        public_key_packet.unwrap()
+    }
+    pub fn root_reply_packet(root: Option<[u8;32]>)->Packet{
+    
+        let root = match root{
+            Some(root)=> root.to_vec(),
+            None => vec![],
+        };
+
+        let root_packet = PacketBuilder::new()
+                        .gen_id()
+                        .body(root)
+                        .packet_type(PacketType::RootReply)
+                        .build();
+
+        root_packet.unwrap()
+    }
+
+    pub fn root_packet(root: Option<[u8;32]>)->Packet{
+        let root = match root{
+            Some(root)=> root.to_vec(),
+            None => vec![],
+        };
+
+        let root_packet = PacketBuilder::new()
+                        .gen_id()
+                        .body(root)
+                        .packet_type(PacketType::Root)
+                        .build();
+
+        root_packet.unwrap()
+    }
 
     pub fn packet_type(&mut self, packet_type: PacketType)->&mut Self{
         self.packet_type = Some(packet_type);
         self
     }
 
-    /*WyRand is not cryptographically secure but 
-    it is really fast (16 Gb/s) so won't slow down
-    the p2p protocol */
+    /*WyRand is not cryptographically secure but it is really 
+    fast (16 Gb/s) so won't slow down the p2p protocol */
     pub fn gen_id(&mut self)-> &mut Self{
         let mut rng = BufferedRng::new(WyRand::new());
         let mut buf : [u8;4] = [0; 4];

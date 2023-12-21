@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::{UdpSocket, SocketAddr};
 
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, PoisonError};
 use std::collections::VecDeque;
 
 use lib_web::discovery::Peer;
@@ -35,7 +35,33 @@ pub struct ReceiveQueue {
 }
 
 impl ReceiveQueue {
-    pub fn add_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
+    pub fn lock_and_push(queue: Arc<Mutex<ReceiveQueue>>,
+                     packet: Packet, sock_addr: SocketAddr){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.push_packet(packet, sock_addr)
+
+    }
+
+    pub fn lock_and_pop(queue: Arc<Mutex<ReceiveQueue>>){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.pop_packet()
+
+    }
+    pub fn push_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
         self.packets_to_treat.push_back((packet, sock_addr));
     }
 
@@ -53,7 +79,33 @@ pub struct SendQueue {
 }
 
 impl SendQueue {
-    pub fn add_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
+    pub fn lock_and_push(queue: Arc<Mutex<SendQueue>>,
+                     packet: Packet, sock_addr: SocketAddr){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.push_packet(packet, sock_addr)
+
+    }
+
+    pub fn lock_and_pop(queue: Arc<Mutex<SendQueue>>){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.pop_packet()
+
+    }
+    pub fn push_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
         self.packets_to_send.push_back((packet, sock_addr));
     }
 
@@ -65,6 +117,12 @@ impl SendQueue {
         self.packets_to_send.is_empty()
     }
 }
+
+
+// pub struct ActionQueue{
+//     actions: VecDeque<Action>,
+// }
+
 
 pub struct ActivePeers {
     peers: Vec<PeerData>,
@@ -133,10 +191,10 @@ impl PendingIds{
     }   
 
     pub fn search_id_raw(&self, packet_id: &[u8;4])->Result<(SocketAddr), CongestionHandlerError>{
-        let id_ind = self.id_to_addr.get(packet_id);
+        let addr = self.id_to_addr.get(packet_id);
 
-        match id_ind {
-            Some((ind, sock_addr)) => return Ok(sock_addr.clone()),
+        match addr {
+            Some(addr) => return Ok(addr.clone()),
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
     }

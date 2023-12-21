@@ -20,7 +20,8 @@ pub enum Action{
     StoreRoot(Option<[u8;32]>, SocketAddr),
 
     SendPublicKey(Option<[u8;64]>, SocketAddr),
-    SendRoot([u8;32], SocketAddr),
+    SendRoot(Option<[u8;32]>, SocketAddr),
+    SendRootReply(Option<[u8;32]>, SocketAddr),
 
     SendError(Vec<u8>, SocketAddr),
     ProcessErrorReply(Vec<u8>, SocketAddr),
@@ -49,6 +50,7 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
             match pending_ids_guard.search_id(&packet){
                 Ok(sock_addr) => {
                     /*if id exists, pop the packet before handling it. */
+                    /*We choose to not handle the collisions. */
                     pending_ids_guard.pop_packet_id(packet.get_id());
 
                     /*Now check if the address it was sent to is
