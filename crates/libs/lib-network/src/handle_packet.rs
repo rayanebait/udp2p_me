@@ -57,7 +57,7 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                                 receive queue is empty wait for the activity of 
                                 the receive queue
                             */
-                            println!("la");
+                            println!("handle packet waits");
                             receive_queue_state.wait();
                             continue
                         }
@@ -145,7 +145,10 @@ fn handle_request_packet(packet: Packet, socket_addr: SocketAddr,
     match packet.get_packet_type() {
         PacketType::NoOp => Ok(Action::A),
         PacketType::Error => Ok(Action::A),
-        PacketType::Hello => Ok(Action::SendHelloReply(*packet.get_id(), socket_addr)),
+        PacketType::Hello =>{
+            println!("Received hello from {}\n", &socket_addr);
+            Ok(Action::SendHelloReply(*packet.get_id(), socket_addr))
+        }
         PacketType::PublicKey=>{
             todo!()
             // Ok(Action::SendPublicKeyReply(..))

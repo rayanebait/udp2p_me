@@ -156,7 +156,7 @@ mod tests {
     use nanorand::{Rng, BufferedRng, wyrand::WyRand};
 
     use import_export::*;
-    use tokio::{self, net::UdpSocket};
+    use tokio::{self, net::UdpSocket, runtime::Handle, runtime};
     use futures::join;
     use std::sync::{Arc, Mutex};
 
@@ -209,7 +209,7 @@ mod tests {
         sleep(Duration::from_millis(500));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor="multi_thread",worker_threads=5)]
     async fn register_to_server(){
         /*0 lets the os assign the port. The port is 
         then accessible with the local_addr method */
@@ -248,6 +248,11 @@ mod tests {
                 Arc::clone(&send_queue),
                 Arc::clone(&receive_queue_state),
                 Arc::clone(&pending_ids));
+
+        // let metrics = Handle::current().metrics();
+        // let n = metrics.active_tasks_count();
+        // println!("Runtime has {} active tasks", n);
+
         join!(f1,f2,f3,f4);
     }
 

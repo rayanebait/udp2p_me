@@ -10,9 +10,8 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<SendQueue>>,
                           receive_queue_state: Arc<QueueState>,
                           action_queue: Arc<Mutex<ActionQueue>>){
     tokio::spawn(async move {
-        println!("la");
         loop {
-            println!("la");
+            println!("action start");
             match ActionQueue::lock_and_pop(Arc::clone(&action_queue)){
                 Some(action)=> 
                     /*action queue is not empty get an action and handle it*/
@@ -24,10 +23,9 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<SendQueue>>,
                     /*
                         action queue is empty wait for the activity of 
                         the receive queue
-                    */
-                    // receive_queue_state.wait();
-                    println!("la");
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                        */
+                    println!("action wait");
+                    receive_queue_state.wait();
                     continue
                 }
             };
