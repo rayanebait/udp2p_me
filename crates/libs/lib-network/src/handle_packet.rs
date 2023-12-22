@@ -57,6 +57,7 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                                 receive queue is empty wait for the activity of 
                                 the receive queue
                             */
+                            println!("la");
                             receive_queue_state.wait();
                             continue
                         }

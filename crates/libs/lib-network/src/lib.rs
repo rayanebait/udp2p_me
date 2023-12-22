@@ -234,20 +234,20 @@ mod tests {
         let f1 = receiver(Arc::clone(&sock),
                  Arc::clone(&receive_queue),
                  Arc::clone(&receive_queue_state));
-        let f2 = sender(Arc::clone(&sock),
-               Arc::clone(&send_queue),
-               Arc::clone(&receive_queue_state),
-               Arc::clone(&pending_ids));
-
-
+                 
+                 
         let f3 = handle_packet_task(Arc::clone(&pending_ids),
-                          Arc::clone(&receive_queue),
-                          Arc::clone(&receive_queue_state),
-                          Arc::clone(&action_queue));
-        let f4 = handle_action_task(Arc::clone(&send_queue),
-                           Arc::clone(&receive_queue_state),
-                           Arc::clone(&action_queue));
-
+                Arc::clone(&receive_queue),
+                Arc::clone(&receive_queue_state),
+                Arc::clone(&action_queue));
+                let f4 = handle_action_task(Arc::clone(&send_queue),
+                Arc::clone(&receive_queue_state),
+                Arc::clone(&action_queue));
+                          
+        let f2 = sender(Arc::clone(&sock),
+                Arc::clone(&send_queue),
+                Arc::clone(&receive_queue_state),
+                Arc::clone(&pending_ids));
         join!(f1,f2,f3,f4);
     }
 
