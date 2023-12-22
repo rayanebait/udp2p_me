@@ -113,6 +113,13 @@ impl SendQueue {
         self.packets_to_send.pop_front();
     }
 
+    pub fn get_packet(&self)->Option<(Packet, SocketAddr)> {
+        match self.packets_to_send.front() {
+            Some((packet, sock_addr)) => Some((packet.clone(), sock_addr.clone())),
+            None=> None,
+        }
+    }
+
     pub fn is_empty(&self)->bool{
         self.packets_to_send.is_empty()
     }

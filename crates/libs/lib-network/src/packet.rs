@@ -83,7 +83,7 @@ impl PacketType {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Packet{
     id: [u8;4],
     packet_type: PacketType,
