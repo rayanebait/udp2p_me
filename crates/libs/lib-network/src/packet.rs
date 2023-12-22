@@ -2,7 +2,7 @@
 use std::default;
 use prelude::*;
 
-use crate::peer_data::*;
+// use crate::peer_data::*;
 
 /*For the id generation */
 use nanorand::{Rng, BufferedRng, wyrand::WyRand};
@@ -143,9 +143,9 @@ impl PacketBuilder {
         hello_packet.unwrap()
     }
 
-    pub fn hello_reply_packet()->Packet{
+    pub fn hello_reply_packet(id: &[u8;4])->Packet{
         let hello_packet = PacketBuilder::new()
-                                .gen_id()
+                                .set_id(*id)
                                 .packet_type(PacketType::HelloReply)
                                 .build();
         hello_packet.unwrap()
@@ -358,7 +358,7 @@ impl Packet {
     }
 
     pub async fn send_to_addr(&self, sock: &UdpSocket,
-             addr: &SocketAddr)->Result<usize, PeerError>{
+             addr: &SocketAddr)->Result<usize, PacketError>{
 
         sock.writable().await;
         let res = sock.try_send_to(self
@@ -369,7 +369,7 @@ impl Packet {
 
         match res {
             Ok(size)=> return Ok(size),
-            Err(e)=> return Err(PeerError::UnknownError),
+            Err(e)=> return Err(PacketError::UnknownError),
         }
     }
 
@@ -393,114 +393,114 @@ impl Packet {
         Ok(response)
     }
 
-    pub async fn send_to(&self, sock: &UdpSocket,
-             peer: &PeerData)->Result<usize, PeerError>{
+    // pub async fn send_to(&self, sock: &UdpSocket,
+    //          peer: &PeerData)->Result<usize, PeerError>{
 
-        /*If peer has a working addr, send to it, else try all addrs. */
-        let addr = match peer.get_good_socketaddr(){
-            Ok(good_addrs)=> good_addrs.get(0),
-            Err(PeerError::NoGoodAddrError)=> {
-                let addrs = peer.get_socketaddr().unwrap();
-                addrs.get(0)
-            }
-            _=> panic!("Shouldn't happen"),
-        };
+    //     /*If peer has a working addr, send to it, else try all addrs. */
+    //     let addr = match peer.get_good_socketaddr(){
+    //         Ok(good_addrs)=> good_addrs.get(0),
+    //         Err(PeerError::NoGoodAddrError)=> {
+    //             let addrs = peer.get_socketaddr().unwrap();
+    //             addrs.get(0)
+    //         }
+    //         _=> panic!("Shouldn't happen"),
+    //     };
 
-        let addr = match addr {
-            Some(addr) => addr,
-            None => return Err(PeerError::NoAddrsError),
-        };
+    //     let addr = match addr {
+    //         Some(addr) => addr,
+    //         None => return Err(PeerError::NoAddrsError),
+    //     };
             
-        self.send_to_addr(sock, &addr).await
-    }
+    //     self.send_to_addr(sock, &addr).await
+    // }
 
 
-    pub async fn send_hello(sock: &UdpSocket,
-                peer_addr: &SocketAddr)->Result<[u8;4], PeerError>{
+    // pub async fn send_hello(sock: &UdpSocket,
+    //             peer_addr: &SocketAddr)->Result<[u8;4], PeerError>{
 
-        let hello_packet = PacketBuilder::hello_packet();            
+    //     let hello_packet = PacketBuilder::hello_packet();            
 
-        match hello_packet.send_to_addr(sock, peer_addr).await {
-            Ok(_)=> Ok(hello_packet.get_id().clone()),
-            Err(e)=>Err(e),
-        }
-    }
+    //     match hello_packet.send_to_addr(sock, peer_addr).await {
+    //         Ok(_)=> Ok(hello_packet.get_id().clone()),
+    //         Err(e)=>Err(e),
+    //     }
+    // }
 
-    pub async fn send_hello_reply(sock: &UdpSocket,
-                peer_addr: &SocketAddr)->Result<(), PeerError>{
+    // pub async fn send_hello_reply(sock: &UdpSocket,
+    //             peer_addr: &SocketAddr)->Result<(), PeerError>{
 
-        let hello_packet = PacketBuilder::hello_reply_packet();            
+    //     let hello_packet = PacketBuilder::hello_reply_packet();            
 
-        match hello_packet.send_to_addr(sock, peer_addr).await {
-            Ok(_)=> Ok(()),
-            Err(e)=>Err(e),
-        }
-    }
+    //     match hello_packet.send_to_addr(sock, peer_addr).await {
+    //         Ok(_)=> Ok(()),
+    //         Err(e)=>Err(e),
+    //     }
+    // }
 
-    pub async fn send_public_key_reply(sock: &UdpSocket, id: [u8;4],
-                peer_addr: &SocketAddr, public_key: Option<[u8;64]>)->Result<(), PeerError>{
-        let body = match public_key {
-            Some(pkey) => {
-                pkey.to_vec()
-            },
-            None => vec![],
-        };
-        let public_key_packet = PacketBuilder::new()
-                                                .set_id(id)
-                                                .packet_type(PacketType::PublicKeyReply)
-                                                .body(body)
-                                                .build()
-                                                .unwrap();
+    // pub async fn send_public_key_reply(sock: &UdpSocket, id: [u8;4],
+    //             peer_addr: &SocketAddr, public_key: Option<[u8;64]>)->Result<(), PeerError>{
+    //     let body = match public_key {
+    //         Some(pkey) => {
+    //             pkey.to_vec()
+    //         },
+    //         None => vec![],
+    //     };
+    //     let public_key_packet = PacketBuilder::new()
+    //                                             .set_id(id)
+    //                                             .packet_type(PacketType::PublicKeyReply)
+    //                                             .body(body)
+    //                                             .build()
+    //                                             .unwrap();
 
-        match public_key_packet.send_to_addr(sock, peer_addr).await {
-            Ok(_)=> Ok(()),
-            Err(e)=>Err(e),
-        }
-    }
+    //     match public_key_packet.send_to_addr(sock, peer_addr).await {
+    //         Ok(_)=> Ok(()),
+    //         Err(e)=>Err(e),
+    //     }
+    // }
 
-    pub async fn send_root_reply(sock: &UdpSocket, id: [u8;4],
-            peer_addr: &SocketAddr, root: Option<[u8;32]>)->Result<(), PeerError>{
-        let body = match root{
-            Some(root_hash) => {
-                root_hash.to_vec()
-            },
-            None => vec![],
-        };
-        let root_packet = PacketBuilder::new()
-                                                .set_id(id)
-                                                .packet_type(PacketType::RootReply)
-                                                .body(body)
-                                                .build()
-                                                .unwrap();
+    // pub async fn send_root_reply(sock: &UdpSocket, id: [u8;4],
+    //         peer_addr: &SocketAddr, root: Option<[u8;32]>)->Result<(), PeerError>{
+    //     let body = match root{
+    //         Some(root_hash) => {
+    //             root_hash.to_vec()
+    //         },
+    //         None => vec![],
+    //     };
+    //     let root_packet = PacketBuilder::new()
+    //                                             .set_id(id)
+    //                                             .packet_type(PacketType::RootReply)
+    //                                             .body(body)
+    //                                             .build()
+    //                                             .unwrap();
 
-        match root_packet.send_to_addr(sock, peer_addr).await {
-            Ok(_)=> Ok(()),
-            Err(e)=>Err(e),
-        }
+    //     match root_packet.send_to_addr(sock, peer_addr).await {
+    //         Ok(_)=> Ok(()),
+    //         Err(e)=>Err(e),
+    //     }
         
-    }
+    // }
 
-    pub async fn send_datum(sock: &UdpSocket, id: [u8;4],
-            peer_addr: &SocketAddr, datum: [u8;1024], hash: [u8; 32])->Result<(), PeerError>{
+    // pub async fn send_datum(sock: &UdpSocket, id: [u8;4],
+    //         peer_addr: &SocketAddr, datum: [u8;1024], hash: [u8; 32])->Result<(), PeerError>{
 
-        let body = {
-            let mut body : Vec<u8> = hash.to_vec();
-            body.append(&mut datum.to_vec());
-            body
-        };
-        let datum_packet = PacketBuilder::new()
-                                                .set_id(id)
-                                                .packet_type(PacketType::Datum)
-                                                .body(body)
-                                                .build()
-                                                .unwrap();
+    //     let body = {
+    //         let mut body : Vec<u8> = hash.to_vec();
+    //         body.append(&mut datum.to_vec());
+    //         body
+    //     };
+    //     let datum_packet = PacketBuilder::new()
+    //                                             .set_id(id)
+    //                                             .packet_type(PacketType::Datum)
+    //                                             .body(body)
+    //                                             .build()
+    //                                             .unwrap();
 
-        match datum_packet.send_to_addr(sock, peer_addr).await {
-            Ok(_)=> Ok(()),
-            Err(e)=>Err(e),
-        }
+    //     match datum_packet.send_to_addr(sock, peer_addr).await {
+    //         Ok(_)=> Ok(()),
+    //         Err(e)=>Err(e),
+    //     }
 
-    }
+    // // }
 
     /*Verify the hash of a Packet during p2p export/import */
     pub fn valid_hash(&self)->bool{

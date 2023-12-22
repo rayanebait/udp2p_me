@@ -5,7 +5,7 @@ use std::sync::{Mutex, Arc, PoisonError, Condvar, MutexGuard};
 use std::collections::VecDeque;
 
 use lib_web::discovery::Peer;
-use crate::{peer_data::*, packet};
+// use crate::{peer_data::*, packet};
 use crate::packet::*;
 use crate::handle_packet::Action;
 
@@ -46,7 +46,7 @@ impl ReceiveQueue {
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -59,7 +59,7 @@ impl ReceiveQueue {
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -93,7 +93,7 @@ impl SendQueue {
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -106,7 +106,7 @@ impl SendQueue {
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -122,13 +122,14 @@ impl SendQueue {
     }
 
     pub fn get_packet(&mut self)->Option<(Packet, SocketAddr)> {
-        match self.packets_to_send.front() {
+        let packet_for_addr = match self.packets_to_send.front() {
             Some((packet, sock_addr)) =>{
-                 self.pop_packet();
-                 Some((packet.clone(), sock_addr.clone()))
+                Some((packet.clone(), sock_addr.clone()))
             },
             None=> None,
-        }
+        };
+        self.pop_packet();
+        packet_for_addr
     }
 
     pub fn is_empty(&self)->bool{
@@ -140,8 +141,8 @@ pub struct QueueState {
     is_not_empty: (Mutex<bool>, Condvar),
 }
 impl QueueState {
-    pub fn build_mutex()->Arc<Mutex<Self>>{
-        Arc::new(Mutex::new(Self{ is_not_empty: (Mutex::new(false), Condvar::new()) }))
+    pub fn build_arc()->Arc<Self>{
+        Arc::new(Self{ is_not_empty: (Mutex::new(false), Condvar::new()) })
     }
     pub fn wait(&self){
         /*
@@ -149,7 +150,7 @@ impl QueueState {
             The wait method atomically unlocks the mutex and waits
             for a notification.
         */
-        let (state_lock, notif_var) = self.is_not_empty;
+        let (state_lock, notif_var) = &self.is_not_empty;
         let mut start_or_wait = state_lock.lock().unwrap();
 
         /*
@@ -163,10 +164,10 @@ impl QueueState {
     }
 
     pub fn set_empty_queue(&mut self){
-        let (state_lock, _) = self.is_not_empty;
+        let (state_lock, _) = &self.is_not_empty;
         let mut state_guard = match state_lock.lock(){
             Ok(state_guard)=> state_guard,
-            Err(PoisonError)=>
+            Err(poison_error)=>
                     panic!("QueueState poisoned, sender panicked ?"),
         };
 
@@ -178,10 +179,10 @@ impl QueueState {
             Put the lock state to true and get the notifyer to 
             tell the other threads to wake up
         */
-        let (state_lock, notifyer) = queue_state.is_not_empty;
+        let (state_lock, notifyer) = &queue_state.is_not_empty;
         let mut state_guard = match state_lock.lock(){
             Ok(state_guard)=> state_guard,
-            Err(PoisonError)=>
+            Err(poison_error)=>
                     panic!("QueueState poisoned, sender panicked ?"),
         };
 
@@ -205,7 +206,7 @@ impl ActionQueue{
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -217,7 +218,7 @@ impl ActionQueue{
             match queue.lock(){
                 Ok(queue_gard)=>
                              queue_gard,
-                Err(PoisonError)=>
+                Err(poison_error)=>
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
@@ -232,14 +233,14 @@ impl ActionQueue{
         self.actions.pop_front()
     }
 
-    pub fn get_packet(&mut self)->Option<Action> {
-        match self.actions.front() {
-            Some(action)=> {
-                 self.pop_action();
-                 Some(action.clone())
-            },
+    pub fn get_action(&mut self)->Option<Action> {
+        let mut front_action = self.actions.front().clone();
+        let front_action = match front_action{
+            Some(action)=> Some(action.clone()),
             None=> None,
-        }
+        };
+        self.pop_action();
+        front_action
     }
 
     pub fn is_empty(&self)->bool{
@@ -249,29 +250,29 @@ impl ActionQueue{
 }
 
 
-pub struct ActivePeers {
-    peers: Vec<PeerData>,
-    addr_map: HashMap<SocketAddr, PeerData>,
-}
+// pub struct ActivePeers {
+//     peers: Vec<PeerData>,
+//     addr_map: HashMap<SocketAddr, PeerData>,
+// }
 
-impl ActivePeers {
+// impl ActivePeers {
 
-    fn build_mutex()->Arc<Mutex<Self>>{
-        Arc::new(Mutex::new(Self{ peers: vec![], addr_map: HashMap::new() }))
-    }
+//     fn build_mutex()->Arc<Mutex<Self>>{
+//         Arc::new(Mutex::new(Self{ peers: vec![], addr_map: HashMap::new() }))
+//     }
 
-    fn add_peer(&mut self, peer: PeerData){
+//     fn add_peer(&mut self, peer: PeerData){
 
-    }
+//     }
 
-    fn pop_peer(&mut self, peer: PeerData){
-        // let sock_addr_ind = &mut self.peers
-        //                         .iter().position(
-        //                             |peer_data| peer_data.eq(&peer)
-        //                         );
-    }
+//     fn pop_peer(&mut self, peer: PeerData){
+//         // let sock_addr_ind = &mut self.peers
+//         //                         .iter().position(
+//         //                             |peer_data| peer_data.eq(&peer)
+//         //                         );
+//     }
 
-}
+// }
 
 
 
@@ -305,8 +306,17 @@ impl PendingIds{
         Arc::new(Mutex::new(PendingIds::default()))
     }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
-    pub fn add_packet_id_raw(&mut self, id: [u8;4], peer_addr: &SocketAddr){
-        self.id_to_addr.insert(id.clone(),  peer_addr.clone());
+    pub fn lock_and_add_packet_id_raw(pending_ids: Arc<Mutex<PendingIds>>,
+                                     id: &[u8;4], peer_addr: &SocketAddr){
+        let mut pending_ids_guard = 
+            match pending_ids.lock(){
+                Ok(pending_ids_guard)=>
+                             pending_ids_guard,
+                Err(poison_error)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        pending_ids_guard.id_to_addr.insert(id.clone(),  peer_addr.clone());
     }
 
 
@@ -334,7 +344,12 @@ impl PendingIds{
 pub fn build_queues()->(Arc<Mutex<ReceiveQueue>>,
                         Arc<Mutex<SendQueue>>,
                         Arc<Mutex<PendingIds>>,
-                        Arc<Mutex<QueueState>>){
+                        Arc<QueueState>,
+                        Arc<Mutex<ActionQueue>>){
 
-    (ReceiveQueue::build_mutex(), SendQueue::build_mutex(),PendingIds::build_mutex(), QueueState::build_mutex())
+    (ReceiveQueue::build_mutex(),
+     SendQueue::build_mutex(),
+     PendingIds::build_mutex(),
+     QueueState::build_arc(),
+     ActionQueue::build_mutex())
 }

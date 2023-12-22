@@ -5,13 +5,14 @@ use futures::future::pending;
 
 use crate::congestion_handler::*;
 use crate::packet::*;
-use crate::peer_data::PeerData;
+// use crate::peer_data::PeerData;
 
 #[derive(Clone)]
 pub enum Action{
     A,
     /*A hashmap is available in ActivePeers: SocketAddr to Peer */
-    SendHelloReply(SocketAddr),
+    SendHello(SocketAddr),
+    SendHelloReply([u8;4], SocketAddr),
     ProcessHelloReply(SocketAddr),
 
     SendDatumWithHash([u8;32], SocketAddr),
@@ -21,6 +22,7 @@ pub enum Action{
     StoreRoot(Option<[u8;32]>, SocketAddr),
 
     SendPublicKey(Option<[u8;64]>, SocketAddr),
+    SendPublicKeyReply(Option<[u8;64]>, SocketAddr),
     SendRoot(Option<[u8;32]>, SocketAddr),
     SendRootReply(Option<[u8;32]>, SocketAddr),
 
@@ -35,7 +37,7 @@ pub enum HandlingError{
     InvalidHashError,
 }
 
-pub fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
+pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                           receive_queue: Arc<Mutex<ReceiveQueue>>,
                           receive_queue_state: Arc<QueueState>,
                           action_queue: Arc<Mutex<ActionQueue>>){
@@ -43,7 +45,7 @@ pub fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
         tokio::spawn(async move {
             loop {
                 let action_or_error = 
-                    match ReceiveQueue::lock_and_pop(receive_queue){
+                    match ReceiveQueue::lock_and_pop(Arc::clone(&receive_queue)){
                         Some((packet, sock_addr))=> 
                             /*receive queue is not empty get a packet and handle it*/
                             handle_packet(packet, sock_addr,
@@ -63,14 +65,14 @@ pub fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                 match action_or_error {
                     Ok(action)=> {
                             /* we have an action, push it to the queue*/
-                            ActionQueue::lock_and_push(action_queue, action);
+                            ActionQueue::lock_and_push(Arc::clone(&action_queue), action);
                             continue
                         }
                     Err(HandlingError::InvalidPacketError)=>todo!(),
                     _ => panic!("Shouldn't happen"),
                 };
             }
-        });
+        }).await;
 }
 
 pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
@@ -82,7 +84,7 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
             match pending_ids.lock() {
                 Ok(guard) => guard,
                 /*If Mutex is poisoned stop every thread, something is wrong */
-                Err(PoisonError)=> panic!("Poisoned Ids Mutex"),
+                Err(poison_error)=> panic!("Poisoned Ids Mutex"),
             };
 
             /*Check if id exists */
@@ -134,14 +136,19 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
 
 /*Server */
 fn handle_request_packet(packet: Packet, socket_addr: SocketAddr,
-                                    pending_ids: Arc<Mutex<PendingIds>>)
+                                    pending_ids: Arc<Mutex<PendingIds>>
+                                //should add self_info with public key root, etc..
+                                )
                                             ->Result<Action, HandlingError>{
 
     match packet.get_packet_type() {
         PacketType::NoOp => Ok(Action::A),
         PacketType::Error => Ok(Action::A),
-        PacketType::Hello => Ok(Action::A),
-        PacketType::PublicKey=>Ok(Action::A),
+        PacketType::Hello => Ok(Action::SendHelloReply(*packet.get_id(), socket_addr)),
+        PacketType::PublicKey=>{
+            todo!()
+            // Ok(Action::SendPublicKeyReply(..))
+        },
         PacketType::Root => Ok(Action::A),
         /*Exports should have its own send/receive queue?*/
         PacketType::Datum => Ok(Action::A),
@@ -164,18 +171,18 @@ fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
             Ok(Action::ProcessErrorReply(error_message, socket_addr))
         },
         PacketType::HelloReply => {
-            println!("Receive HelloReply from peer at {}\n", socket_addr);
+            println!("Received HelloReply from peer at {}\n", socket_addr);
             Ok(Action::ProcessHelloReply(socket_addr))
         },
         PacketType::PublicKeyReply => {
-            println!("Receive PublicKeyReply from peer at {}\n", socket_addr);
+            println!("Received PublicKeyReply from peer at {}\n", socket_addr);
             Ok(Action::StorePublicKey(
                 match packet.get_body_length(){
                     /*Peer doesn't implement signatures */
                 0 => None,
                     /*Peer implements signatures */
                 _ => Some({
-                        let mut public_key: [u8;64];
+                        let mut public_key: [u8;64] = [0;64];
                         public_key.copy_from_slice(&packet.get_body().as_slice()[0..64]);
                         public_key
                     }),
@@ -189,7 +196,7 @@ fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
                 0 => None,
                     /*Peer implements signatures */
                 _ => Some({
-                        let mut root: [u8;32];
+                        let mut root: [u8;32] = [0;32];
                         root.copy_from_slice(&packet.get_body().as_slice()[0..32]);
                         root
                     }),
