@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::net::{UdpSocket, SocketAddr};
 
-use std::sync::{Mutex, Arc, PoisonError};
+use std::sync::{Mutex, Arc, PoisonError, Condvar, MutexGuard};
 use std::collections::VecDeque;
 
 use lib_web::discovery::Peer;
 use crate::{peer_data::*, packet};
 use crate::packet::*;
+use crate::handle_packet::Action;
 
 #[derive(Default)]
 pub struct ActiveSockets{
@@ -35,6 +36,10 @@ pub struct ReceiveQueue {
 }
 
 impl ReceiveQueue {
+    fn build_mutex()->Arc<Mutex<Self>>{
+        Arc::new(Mutex::new(Self{ packets_to_treat: VecDeque::new() }))
+    }
+
     pub fn lock_and_push(queue: Arc<Mutex<ReceiveQueue>>,
                      packet: Packet, sock_addr: SocketAddr){
         let mut queue_guard = 
@@ -45,11 +50,11 @@ impl ReceiveQueue {
                              panic!("Mutex is poisoned, some thread panicked"),
             };
         
-        queue_guard.push_packet(packet, sock_addr)
+        queue_guard.push_packet(sock_addr, packet);
 
     }
 
-    pub fn lock_and_pop(queue: Arc<Mutex<ReceiveQueue>>){
+    pub fn lock_and_pop(queue: Arc<Mutex<ReceiveQueue>>)->Option<(Packet, SocketAddr)>{
         let mut queue_guard = 
             match queue.lock(){
                 Ok(queue_gard)=>
@@ -59,14 +64,14 @@ impl ReceiveQueue {
             };
         
         queue_guard.pop_packet()
-
     }
-    pub fn push_packet(&mut self, packet: Packet, sock_addr: SocketAddr){
+
+    pub fn push_packet(&mut self, sock_addr: SocketAddr, packet: Packet){
         self.packets_to_treat.push_back((packet, sock_addr));
     }
 
-    pub fn pop_packet(&mut self){
-        self.packets_to_treat.pop_front();
+    pub fn pop_packet(&mut self)->Option<(Packet, SocketAddr)>{
+        self.packets_to_treat.pop_front()
     }
 
     pub fn is_empty(&self)->bool{
@@ -77,8 +82,11 @@ impl ReceiveQueue {
 pub struct SendQueue {
     packets_to_send: VecDeque<(Packet, SocketAddr)>,
 }
-
 impl SendQueue {
+    fn build_mutex()->Arc<Mutex<Self>>{
+        Arc::new(Mutex::new(Self{ packets_to_send: VecDeque::new() }))
+    }
+
     pub fn lock_and_push(queue: Arc<Mutex<SendQueue>>,
                      packet: Packet, sock_addr: SocketAddr){
         let mut queue_guard = 
@@ -113,9 +121,12 @@ impl SendQueue {
         self.packets_to_send.pop_front();
     }
 
-    pub fn get_packet(&self)->Option<(Packet, SocketAddr)> {
+    pub fn get_packet(&mut self)->Option<(Packet, SocketAddr)> {
         match self.packets_to_send.front() {
-            Some((packet, sock_addr)) => Some((packet.clone(), sock_addr.clone())),
+            Some((packet, sock_addr)) =>{
+                 self.pop_packet();
+                 Some((packet.clone(), sock_addr.clone()))
+            },
             None=> None,
         }
     }
@@ -125,10 +136,117 @@ impl SendQueue {
     }
 }
 
+pub struct QueueState {
+    is_not_empty: (Mutex<bool>, Condvar),
+}
+impl QueueState {
+    pub fn build_mutex()->Arc<Mutex<Self>>{
+        Arc::new(Mutex::new(Self{ is_not_empty: (Mutex::new(false), Condvar::new()) }))
+    }
+    pub fn wait(&self){
+        /*
+            Get the lock once and give it to a Condvar.
+            The wait method atomically unlocks the mutex and waits
+            for a notification.
+        */
+        let (state_lock, notif_var) = self.is_not_empty;
+        let mut start_or_wait = state_lock.lock().unwrap();
 
-// pub struct ActionQueue{
-//     actions: VecDeque<Action>,
-// }
+        /*
+            Due to some obscure reasons the Condvar is 
+            susceptible to spurious wakeups so that we
+            need to pair it with a variable change on the Mutex
+        */
+        while !*start_or_wait {
+            start_or_wait = notif_var.wait(start_or_wait).unwrap();
+        }
+    }
+
+    pub fn set_empty_queue(&mut self){
+        let (state_lock, _) = self.is_not_empty;
+        let mut state_guard = match state_lock.lock(){
+            Ok(state_guard)=> state_guard,
+            Err(PoisonError)=>
+                    panic!("QueueState poisoned, sender panicked ?"),
+        };
+
+        *state_guard = false;
+    }
+
+    pub fn set_non_empty_queue(queue_state: Arc<QueueState>){
+        /*
+            Put the lock state to true and get the notifyer to 
+            tell the other threads to wake up
+        */
+        let (state_lock, notifyer) = queue_state.is_not_empty;
+        let mut state_guard = match state_lock.lock(){
+            Ok(state_guard)=> state_guard,
+            Err(PoisonError)=>
+                    panic!("QueueState poisoned, sender panicked ?"),
+        };
+
+        *state_guard = true;
+        notifyer.notify_all();
+    }
+}
+
+pub struct ActionQueue{
+    actions: VecDeque<Action>,
+}
+
+impl ActionQueue{
+    fn build_mutex()->Arc<Mutex<Self>>{
+        Arc::new(Mutex::new(Self{ actions: VecDeque::new() }))
+    }
+
+    pub fn lock_and_push(queue: Arc<Mutex<ActionQueue>>,
+                     action: Action){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.push_action(action);
+    }
+
+    pub fn lock_and_pop(queue: Arc<Mutex<ActionQueue>>)->Option<Action>{
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(PoisonError)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.pop_action()
+
+    }
+    pub fn push_action(&mut self, action: Action){
+        self.actions.push_back(action);
+    }
+
+    pub fn pop_action(&mut self)->Option<Action>{
+        self.actions.pop_front()
+    }
+
+    pub fn get_packet(&mut self)->Option<Action> {
+        match self.actions.front() {
+            Some(action)=> {
+                 self.pop_action();
+                 Some(action.clone())
+            },
+            None=> None,
+        }
+    }
+
+    pub fn is_empty(&self)->bool{
+        self.actions.is_empty()
+    }
+
+}
 
 
 pub struct ActivePeers {
@@ -213,3 +331,10 @@ impl PendingIds{
     }
 }
 
+pub fn build_queues()->(Arc<Mutex<ReceiveQueue>>,
+                        Arc<Mutex<SendQueue>>,
+                        Arc<Mutex<PendingIds>>,
+                        Arc<Mutex<QueueState>>){
+
+    (ReceiveQueue::build_mutex(), SendQueue::build_mutex(),PendingIds::build_mutex(), QueueState::build_mutex())
+}

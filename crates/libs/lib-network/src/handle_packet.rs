@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Condvar};
 
 use futures::future::pending;
 
@@ -7,6 +7,7 @@ use crate::congestion_handler::*;
 use crate::packet::*;
 use crate::peer_data::PeerData;
 
+#[derive(Clone)]
 pub enum Action{
     A,
     /*A hashmap is available in ActivePeers: SocketAddr to Peer */
@@ -32,6 +33,44 @@ pub enum Action{
 pub enum HandlingError{
     InvalidPacketError,
     InvalidHashError,
+}
+
+pub fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
+                          receive_queue: Arc<Mutex<ReceiveQueue>>,
+                          receive_queue_state: Arc<QueueState>,
+                          action_queue: Arc<Mutex<ActionQueue>>){
+
+        tokio::spawn(async move {
+            loop {
+                let action_or_error = 
+                    match ReceiveQueue::lock_and_pop(receive_queue){
+                        Some((packet, sock_addr))=> 
+                            /*receive queue is not empty get a packet and handle it*/
+                            handle_packet(packet, sock_addr,
+                                 Arc::clone(&pending_ids)
+                                 /*return the action required */
+                            ),
+                        None=>{
+                            /*
+                                receive queue is empty wait for the activity of 
+                                the receive queue
+                            */
+                            receive_queue_state.wait();
+                            continue
+                        }
+                    };
+
+                match action_or_error {
+                    Ok(action)=> {
+                            /* we have an action, push it to the queue*/
+                            ActionQueue::lock_and_push(action_queue, action);
+                            continue
+                        }
+                    Err(HandlingError::InvalidPacketError)=>todo!(),
+                    _ => panic!("Shouldn't happen"),
+                };
+            }
+        });
 }
 
 pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,

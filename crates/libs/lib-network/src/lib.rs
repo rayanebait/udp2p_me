@@ -158,7 +158,11 @@ mod tests {
     use import_export::*;
     use tokio::{self, net::UdpSocket};
 
+    use crate::congestion_handler::ReceiveQueue;
+    use crate::congestion_handler::build_queues;
     use crate::packet::*;
+    use crate::sender_receiver::*;
+    use crate::action::*;
 
     // #[test]
     // fn it_works() {
@@ -209,9 +213,11 @@ mod tests {
         let sock = UdpSocket::bind("172.10.20.7:0").await
                                             .unwrap();
         
-
+        let (receive_queue, send_queue, pending_ids, send_queue_state)
+            = build_queues();
+        
         
 
-
     }
+
 }

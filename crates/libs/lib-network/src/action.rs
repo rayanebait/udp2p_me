@@ -6,6 +6,31 @@ use crate::handle_packet::{Action, HandlingError};
 use crate::congestion_handler::*;
 
 
+pub async fn handle_action_task(send_queue: Arc<Mutex<SendQueue>>,
+                          receive_queue_state: Arc<QueueState>,
+                          action_queue: Arc<Mutex<ActionQueue>>){
+        tokio::spawn(async move {
+            loop {
+                let action_or_error = 
+                    match ActionQueue::lock_and_pop(Arc::clone(&action_queue)){
+                        Some(action)=> 
+                            /*action queue is not empty get an action and handle it*/
+                            handle_action(action,
+                                 Arc::clone(&send_queue)
+                                 /*return the action required */
+                            ),
+                        None=>{
+                            /*
+                                action queue is empty wait for the activity of 
+                                the receive queue
+                            */
+                            receive_queue_state.wait();
+                            continue
+                        }
+                    };
+            }
+        });
+}
 
 pub async fn handle_action(action: Action, send_queue: Arc<Mutex<SendQueue>>){
     match action {
