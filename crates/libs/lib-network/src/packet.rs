@@ -313,7 +313,6 @@ impl Packet {
         panic */
     pub fn from_bytes(raw_packet: &mut Vec<u8>)->Self{
         /*Should check len */
-        todo!();
         let id : [u8;4]= raw_packet.drain(0..=3).as_slice().try_into()
                             .unwrap();
         let packet_type= PacketType::from_u8(

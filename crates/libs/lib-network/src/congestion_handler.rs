@@ -163,8 +163,8 @@ impl QueueState {
         }
     }
 
-    pub fn set_empty_queue(&mut self){
-        let (state_lock, _) = &self.is_not_empty;
+    pub fn set_empty_queue(queue_state: Arc<QueueState>){
+        let (state_lock, _) = &queue_state.is_not_empty;
         let mut state_guard = match state_lock.lock(){
             Ok(state_guard)=> state_guard,
             Err(poison_error)=>
@@ -344,12 +344,17 @@ impl PendingIds{
 pub fn build_queues()->(Arc<Mutex<ReceiveQueue>>,
                         Arc<Mutex<SendQueue>>,
                         Arc<Mutex<PendingIds>>,
+                        Arc<Mutex<ActionQueue>>,
                         Arc<QueueState>,
-                        Arc<Mutex<ActionQueue>>){
+                        Arc<QueueState>,
+                        Arc<QueueState>){
 
     (ReceiveQueue::build_mutex(),
      SendQueue::build_mutex(),
      PendingIds::build_mutex(),
+     ActionQueue::build_mutex(),
      QueueState::build_arc(),
-     ActionQueue::build_mutex())
+     QueueState::build_arc(),
+     QueueState::build_arc(),
+    )
 }

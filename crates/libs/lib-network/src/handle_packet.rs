@@ -40,7 +40,8 @@ pub enum HandlingError{
 pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                           receive_queue: Arc<Mutex<ReceiveQueue>>,
                           receive_queue_state: Arc<QueueState>,
-                          action_queue: Arc<Mutex<ActionQueue>>){
+                          action_queue: Arc<Mutex<ActionQueue>>,
+                          action_queue_state: Arc<QueueState>){
 
         tokio::spawn(async move {
             loop {
@@ -58,6 +59,7 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                                 the receive queue
                             */
                             println!("handle packet waits");
+                            QueueState::set_empty_queue(Arc::clone(&receive_queue_state));
                             receive_queue_state.wait();
                             continue
                         }
@@ -66,7 +68,9 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                 match action_or_error {
                     Ok(action)=> {
                             /* we have an action, push it to the queue*/
+                            println!("push action (handle packet)");
                             ActionQueue::lock_and_push(Arc::clone(&action_queue), action);
+                            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                             continue
                         }
                     Err(HandlingError::InvalidPacketError)=>todo!(),

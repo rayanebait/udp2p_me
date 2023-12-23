@@ -221,14 +221,19 @@ mod tests {
         let (receive_queue,
              send_queue,
              pending_ids,
+             action_queue,
              receive_queue_state,
-             action_queue)
+             action_queue_state,
+             send_queue_state)
              = build_queues();
              
         {
             let packet = PacketBuilder::hello_packet();
             let sock_addr = "176.169.27.221:9157".parse().unwrap();
-            ReceiveQueue::lock_and_push(Arc::clone(&receive_queue), packet, sock_addr)
+            ReceiveQueue::lock_and_push(Arc::clone(&receive_queue), packet, sock_addr);
+            let packet = PacketBuilder::hello_packet();
+            let sock_addr2 = "176.169.27.221:37086".parse().unwrap();
+            ReceiveQueue::lock_and_push(Arc::clone(&receive_queue), packet, sock_addr2)
         }
         /*Do a launch tasks func ? */
         let f1 = receiver(Arc::clone(&sock),
@@ -236,17 +241,22 @@ mod tests {
                  Arc::clone(&receive_queue_state));
                  
                  
-        let f3 = handle_packet_task(Arc::clone(&pending_ids),
+        let f3 = handle_packet_task(
+            Arc::clone(&pending_ids),
                 Arc::clone(&receive_queue),
                 Arc::clone(&receive_queue_state),
-                Arc::clone(&action_queue));
-                let f4 = handle_action_task(Arc::clone(&send_queue),
-                Arc::clone(&receive_queue_state),
-                Arc::clone(&action_queue));
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state));
+        let f4 = handle_action_task(
+                Arc::clone(&send_queue),
+                Arc::clone(&send_queue_state),
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+            );
                           
         let f2 = sender(Arc::clone(&sock),
                 Arc::clone(&send_queue),
-                Arc::clone(&receive_queue_state),
+                Arc::clone(&send_queue_state),
                 Arc::clone(&pending_ids));
 
         // let metrics = Handle::current().metrics();
