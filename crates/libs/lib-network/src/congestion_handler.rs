@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use lib_web::discovery::Peer;
 // use crate::{peer_data::*, packet};
-use crate::packet::*;
+use crate::packet::{*, self};
 use crate::action::*;
 
 #[derive(Default)]
@@ -82,6 +82,7 @@ impl ReceiveQueue {
 pub struct SendQueue {
     packets_to_send: VecDeque<(Packet, SocketAddr)>,
 }
+
 impl SendQueue {
     fn build_mutex()->Arc<Mutex<Self>>{
         Arc::new(Mutex::new(Self{ packets_to_send: VecDeque::new() }))
@@ -246,6 +247,62 @@ impl ActionQueue{
     pub fn is_empty(&self)->bool{
         self.actions.is_empty()
     }
+}
+
+pub struct Queue<T> {
+    data: VecDeque<T>,
+}
+
+impl<T: Clone> Queue<T>{
+    fn build_mutex()->Arc<Mutex<Self>>{
+        Arc::new(Mutex::new(Self{ data: VecDeque::new() }))
+    }
+
+    pub fn lock_and_push(queue: Arc<Mutex<Queue<T>>>,
+                     data: T){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(poison_error)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.push_back(data);
+    }
+
+    pub fn lock_and_pop(queue: Arc<Mutex<Queue<T>>>)->Option<T>{
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(poison_error)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.pop_front()
+    }
+    pub fn push_back(&mut self, data: T){
+        self.data.push_back(data);
+    }
+
+    pub fn pop_front(&mut self)->Option<T>{
+        self.data.pop_front()
+    }
+
+    pub fn get_front(&mut self)->Option<T> {
+        let mut front = self.data.front().cloned();
+        let front = match front{
+            Some(front)=> Some(front.clone()),
+            None=> None,
+        };
+        self.pop_front();
+        front
+    }
+
+    pub fn is_empty(&self)->bool{
+        self.data.is_empty()
+    }
 
 }
 
@@ -341,18 +398,18 @@ impl PendingIds{
     }
 }
 
-pub fn build_queues()->(Arc<Mutex<ReceiveQueue>>,
-                        Arc<Mutex<SendQueue>>,
+pub fn build_queues()->(Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
+                        Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
                         Arc<Mutex<PendingIds>>,
-                        Arc<Mutex<ActionQueue>>,
+                        Arc<Mutex<Queue<Action>>>,
                         Arc<QueueState>,
                         Arc<QueueState>,
                         Arc<QueueState>){
 
-    (ReceiveQueue::build_mutex(),
-     SendQueue::build_mutex(),
+    (Queue::build_mutex(),
+     Queue::build_mutex(),
      PendingIds::build_mutex(),
-     ActionQueue::build_mutex(),
+     Queue::build_mutex(),
      QueueState::build_arc(),
      QueueState::build_arc(),
      QueueState::build_arc(),

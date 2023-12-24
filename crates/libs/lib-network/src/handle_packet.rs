@@ -13,15 +13,15 @@ pub enum HandlingError{
 }
 
 pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
-                          receive_queue: Arc<Mutex<ReceiveQueue>>,
+                          receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
                           receive_queue_state: Arc<QueueState>,
-                          action_queue: Arc<Mutex<ActionQueue>>,
+                          action_queue: Arc<Mutex<Queue<Action>>>,
                           action_queue_state: Arc<QueueState>){
 
         tokio::spawn(async move {
             loop {
                 let action_or_error = 
-                    match ReceiveQueue::lock_and_pop(Arc::clone(&receive_queue)){
+                    match Queue::lock_and_pop(Arc::clone(&receive_queue)){
                         Some((packet, sock_addr))=> 
                             /*receive queue is not empty get a packet and handle it*/
                             handle_packet(packet, sock_addr,
@@ -44,7 +44,7 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                     Ok(action)=> {
                             /* we have an action, push it to the queue*/
                             println!("push action (handle packet)");
-                            ActionQueue::lock_and_push(Arc::clone(&action_queue), action);
+                            Queue::lock_and_push(Arc::clone(&action_queue), action);
                             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                             continue
                         }

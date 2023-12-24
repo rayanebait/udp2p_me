@@ -5,6 +5,7 @@ pub mod handle_packet;
 pub mod handle_action;
 pub mod sender_receiver;
 pub mod action;
+pub mod process_queue;
 
 pub mod import_export{
     use std::default;
@@ -161,7 +162,7 @@ mod tests {
     use futures::join;
     use std::sync::{Arc, Mutex};
 
-    use crate::congestion_handler::ReceiveQueue;
+    use crate::congestion_handler::Queue;
     use crate::congestion_handler::build_queues;
     use crate::handle_packet::handle_packet_task;
     use crate::packet::*;
@@ -215,7 +216,7 @@ mod tests {
         /*0 lets the os assign the port. The port is 
         then accessible with the local_addr method */
         let sock = Arc::new(
-            UdpSocket::bind("192.168.1.90:0").await
+            UdpSocket::bind("172.20.10.7:0").await
                                             .unwrap()
                                         );
         
@@ -231,10 +232,10 @@ mod tests {
         {
             let packet = PacketBuilder::hello_packet();
             let sock_addr = "176.169.27.221:9157".parse().unwrap();
-            ReceiveQueue::lock_and_push(Arc::clone(&receive_queue), packet, sock_addr);
+            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
             let packet = PacketBuilder::hello_packet();
             let sock_addr2 = "176.169.27.221:37086".parse().unwrap();
-            ReceiveQueue::lock_and_push(Arc::clone(&receive_queue), packet, sock_addr2)
+            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr2))
         }
         /*Do a launch tasks func ? */
         let f1 = receiver(Arc::clone(&sock),

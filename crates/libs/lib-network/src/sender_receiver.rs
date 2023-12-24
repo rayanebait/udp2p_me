@@ -1,9 +1,10 @@
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError, Condvar};
 use std::thread::sleep;
 use tokio::{net::UdpSocket, spawn};
 use tokio_util::task::TaskTracker;
 
-use crate::congestion_handler::{ReceiveQueue, SendQueue, QueueState, PendingIds};
+use crate::congestion_handler::{Queue, QueueState, PendingIds};
 use crate::packet::{Packet, PacketError};
 
 /*
@@ -11,13 +12,13 @@ use crate::packet::{Packet, PacketError};
     handle action accesses only the last 
 */
 pub async fn receiver(sock: Arc<UdpSocket>,
-         receive_queue: Arc<Mutex<ReceiveQueue>>,
+         receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
          receive_queue_state: Arc<QueueState>){
     tokio::spawn(async move {
         loop {
             /*Get the first packet in the Queue or None if the queue 
             is empty */
-            let (packet, sock_addr) =
+            let (sock_addr, packet) =
             match Packet::recv_from(&sock).await{
                 Ok(packet_and_addr) => packet_and_addr,
                 _=> continue,
@@ -25,9 +26,9 @@ pub async fn receiver(sock: Arc<UdpSocket>,
             println!("receiver received");
 
             /*Maybe should be async? */
-            ReceiveQueue::lock_and_push(
+            Queue::lock_and_push(
                     Arc::clone(&receive_queue),
-                        sock_addr, packet);
+                        ( packet, sock_addr));
 
             QueueState::set_non_empty_queue(Arc::clone(&receive_queue_state));
 
@@ -36,7 +37,7 @@ pub async fn receiver(sock: Arc<UdpSocket>,
 }
 
 pub async fn sender(sock: Arc<UdpSocket>,
-         send_queue: Arc<Mutex<SendQueue>>,
+         send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
          send_queue_state: Arc<QueueState>,
          pending_ids_to_add: Arc<Mutex<PendingIds>>){
     tokio::spawn(async move {
@@ -51,7 +52,7 @@ pub async fn sender(sock: Arc<UdpSocket>,
                 };
 
                 /*pops the front packet if it exists */
-                guard.get_packet()
+                guard.get_front()
             };
 
             /*If the queue is empty, put the thread to sleep until queue 
