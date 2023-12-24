@@ -5,7 +5,7 @@ pub mod handle_packet;
 pub mod handle_action;
 pub mod sender_receiver;
 pub mod action;
-pub mod process_queue;
+pub mod process;
 
 pub mod import_export{
     use std::default;
@@ -168,6 +168,7 @@ mod tests {
     use crate::packet::*;
     use crate::sender_receiver::*;
     use crate::handle_action::*;
+    use crate::process::*;
 
     // #[test]
     // fn it_works() {
@@ -222,11 +223,14 @@ mod tests {
         
         let (receive_queue,
              send_queue,
-             pending_ids,
              action_queue,
+             process_queue,
+             pending_ids,
              receive_queue_state,
              action_queue_state,
-             send_queue_state)
+             send_queue_state,
+             process_queue_state,
+            )
              = build_queues();
              
         {
@@ -243,20 +247,28 @@ mod tests {
                  Arc::clone(&receive_queue_state));
                  
                  
-        let f3 = handle_packet_task(
+        let f2 = handle_packet_task(
             Arc::clone(&pending_ids),
                 Arc::clone(&receive_queue),
                 Arc::clone(&receive_queue_state),
                 Arc::clone(&action_queue),
                 Arc::clone(&action_queue_state));
-        let f4 = handle_action_task(
+        let f3 = handle_action_task(
                 Arc::clone(&send_queue),
                 Arc::clone(&send_queue_state),
                 Arc::clone(&action_queue),
                 Arc::clone(&action_queue_state),
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state),
+            );
+        let f4 = process_task(
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state),
             );
                           
-        let f2 = sender(Arc::clone(&sock),
+        let f5 = sender(Arc::clone(&sock),
                 Arc::clone(&send_queue),
                 Arc::clone(&send_queue_state),
                 Arc::clone(&pending_ids));

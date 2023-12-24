@@ -400,16 +400,21 @@ impl PendingIds{
 
 pub fn build_queues()->(Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
                         Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
-                        Arc<Mutex<PendingIds>>,
                         Arc<Mutex<Queue<Action>>>,
+                        Arc<Mutex<Queue<Action>>>,
+                        Arc<Mutex<PendingIds>>,
                         Arc<QueueState>,
                         Arc<QueueState>,
-                        Arc<QueueState>){
+                        Arc<QueueState>,
+                        Arc<QueueState>
+                    ){
 
     (Queue::build_mutex(),
      Queue::build_mutex(),
-     PendingIds::build_mutex(),
      Queue::build_mutex(),
+     Queue::build_mutex(),
+     PendingIds::build_mutex(),
+     QueueState::build_arc(),
      QueueState::build_arc(),
      QueueState::build_arc(),
      QueueState::build_arc(),

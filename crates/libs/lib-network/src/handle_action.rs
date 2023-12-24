@@ -7,6 +7,7 @@ use crate::handle_packet::HandlingError;
 use crate::action::Action;
 
 use crate::congestion_handler::*;
+use crate::process;
 
 
 /*Waits for the signal that the action queue is not empty 
@@ -15,19 +16,25 @@ it also notifies the send queue wether is it empty or not. */
 pub async fn handle_action_task(send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
                                 send_queue_state: Arc<QueueState>,
                                 action_queue: Arc<Mutex<Queue<Action>>>,
-                                action_queue_state: Arc<QueueState>){
+                                action_queue_state: Arc<QueueState>,
+                                process_queue: Arc<Mutex<Queue<Action>>>,
+                                process_queue_state: Arc<QueueState>
+                            ){
     tokio::spawn(async move {
         loop {
             match Queue::lock_and_pop(Arc::clone(&action_queue)){
                 Some(action)=> {
                     /*action queue is not empty get an action and handle it*/
                     println!("handle action");
-                    QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
                     handle_action(action,
                         Arc::clone(&send_queue),
-                    Arc::clone(&send_queue_state)
-                        /*return the action required */
-                    )},
+                    Arc::clone(&send_queue_state),
+                                  Arc::clone(&process_queue),
+                                  Arc::clone(&process_queue_state)
+                );
+                /*return the action required */
+
+                },
                 None=>{
                     /*
                         action queue is empty wait for the activity of 
@@ -45,17 +52,16 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)
 }
 
 pub fn handle_action(action: Action,
-        send_queue: Arc<Mutex<Queue<(Packet,SocketAddr)>>>,
-                         send_queue_state: Arc<QueueState>){
+                     send_queue: Arc<Mutex<Queue<(Packet,SocketAddr)>>>,
+                     send_queue_state: Arc<QueueState>,
+                     process_queue: Arc<Mutex<Queue<Action>>>,
+                     process_queue_state: Arc<QueueState>
+                        ){
     match action {
         Action::NoOp(sock_addr) =>{
             println!("Received NoOp packet from {}\n", sock_addr);
             return;
         }, 
-        Action::ProcessDatum(..) =>(), 
-        Action::ProcessErrorReply(..) =>(), 
-        Action::ProcessHelloReply(..) =>(), 
-        
         Action::SendHelloReply(id, sock_addr)=>{
             let packet = PacketBuilder::hello_reply_packet(&id);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -80,8 +86,9 @@ pub fn handle_action(action: Action,
             QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
         },
 
-        Action::StoreRoot(..) =>(), 
-        Action::StorePublicKey(..) =>(), 
-        _ =>(),
+        _ =>{
+            Queue::lock_and_push(Arc::clone(&process_queue), action);
+            QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
+        },
     };
 }
