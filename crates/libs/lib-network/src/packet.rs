@@ -143,25 +143,46 @@ impl PacketBuilder {
         hello_packet.unwrap()
     }
 
-    pub fn hello_reply_packet(id: &[u8;4])->Packet{
+    pub fn hello_reply_packet(id: &[u8;4], extensions: &[u8;4], name: Vec<u8>)->Packet{
+        let mut body = extensions.to_vec();
+        let mut name = name.clone();
+        body.append(&mut name);
         let hello_packet = PacketBuilder::new()
                                 .set_id(*id)
+                                .body(body)
                                 .packet_type(PacketType::HelloReply)
                                 .build();
         hello_packet.unwrap()
     }
-    pub fn public_key_reply_packet(public_key: Option<[u8;64]>, id: [u8;4])->Packet{
-        let public_key = match public_key{
-            Some(public_key)=> public_key.to_vec(),
+    pub fn error_packet(err_msg: Option<Vec<u8>>)->Packet{
+    
+        let err_msg= match err_msg{
+            Some(err_msg)=> err_msg.to_vec(),
             None => vec![],
         };
-        let public_key_packet = PacketBuilder::new()
-                        .set_id(id)
-                        .body(public_key)
-                        .packet_type(PacketType::PublicKeyReply)
+
+        let err_packet = PacketBuilder::new()
+                        .gen_id()
+                        .body(err_msg)
+                        .packet_type(PacketType::Error)
                         .build();
 
-        public_key_packet.unwrap()
+        err_packet.unwrap()
+    }
+    pub fn error_reply_packet(id: &[u8;4], err_msg: Option<Vec<u8>>)->Packet{
+    
+        let err_msg= match err_msg{
+            Some(err_msg)=> err_msg.to_vec(),
+            None => vec![],
+        };
+
+        let err_reply_packet = PacketBuilder::new()
+                        .set_id(*id)
+                        .body(err_msg)
+                        .packet_type(PacketType::ErrorReply)
+                        .build();
+
+        err_reply_packet.unwrap()
     }
     pub fn public_key_packet(public_key: Option<[u8;64]>)->Packet{
         let public_key = match public_key{
@@ -177,20 +198,18 @@ impl PacketBuilder {
 
         public_key_packet.unwrap()
     }
-    pub fn root_reply_packet(root: Option<[u8;32]>)->Packet{
-    
-        let root = match root{
-            Some(root)=> root.to_vec(),
+    pub fn public_key_reply_packet(public_key: Option<[u8;64]>, id: [u8;4])->Packet{
+        let public_key = match public_key{
+            Some(public_key)=> public_key.to_vec(),
             None => vec![],
         };
-
-        let root_packet = PacketBuilder::new()
-                        .gen_id()
-                        .body(root)
-                        .packet_type(PacketType::RootReply)
+        let public_key_packet = PacketBuilder::new()
+                        .set_id(id)
+                        .body(public_key)
+                        .packet_type(PacketType::PublicKeyReply)
                         .build();
 
-        root_packet.unwrap()
+        public_key_packet.unwrap()
     }
 
     pub fn root_packet(root: Option<[u8;32]>)->Packet{
@@ -206,6 +225,44 @@ impl PacketBuilder {
                         .build();
 
         root_packet.unwrap()
+    }
+
+    pub fn root_reply_packet(id: &[u8;4], root: Option<[u8;32]>)->Packet{
+    
+        let root = match root{
+            Some(root)=> root.to_vec(),
+            None => vec![],
+        };
+
+        let root_packet = PacketBuilder::new()
+                        .set_id(*id)
+                        .body(root)
+                        .packet_type(PacketType::RootReply)
+                        .build();
+
+        root_packet.unwrap()
+    }
+    pub fn get_datum_packet(hash: [u8;32])->Packet{
+
+        let get_datum_packet = PacketBuilder::new()
+                        .gen_id()
+                        .body(hash.to_vec())
+                        .packet_type(PacketType::GetDatum)
+                        .build();
+
+        get_datum_packet.unwrap()
+    }
+    pub fn datum_packet(id: &[u8;4], hash: [u8;32], datum: Vec<u8>)->Packet{
+        let mut body = hash.to_vec();
+        let mut datum = datum.clone();
+        body.append(&mut datum);
+        let datum_packet = PacketBuilder::new()
+                        .set_id(*id)
+                        .body(body)
+                        .packet_type(PacketType::GetDatum)
+                        .build();
+
+        datum_packet.unwrap()
     }
 
     pub fn packet_type(&mut self, packet_type: PacketType)->&mut Self{

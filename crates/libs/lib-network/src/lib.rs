@@ -6,6 +6,7 @@ pub mod handle_action;
 pub mod sender_receiver;
 pub mod action;
 pub mod process;
+pub mod peer;
 
 pub mod import_export{
     use std::default;
@@ -151,14 +152,14 @@ pub mod import_export{
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::net::SocketAddr, thread::sleep, time::Duration};
+    use std::net::SocketAddr;
 
     use super::*;
 
     use nanorand::{Rng, BufferedRng, wyrand::WyRand};
 
     use import_export::*;
-    use tokio::{self, net::UdpSocket, runtime::Handle, runtime};
+    use tokio::{self, net::UdpSocket, runtime::Handle, runtime, time::{sleep,Duration}};
     use futures::join;
     use std::sync::{Arc, Mutex};
 
@@ -166,9 +167,11 @@ mod tests {
     use crate::congestion_handler::build_queues;
     use crate::handle_packet::handle_packet_task;
     use crate::packet::*;
+    use crate::peer::peer::*;
     use crate::sender_receiver::*;
     use crate::handle_action::*;
     use crate::process::*;
+
 
     // #[test]
     // fn it_works() {
@@ -217,10 +220,9 @@ mod tests {
         /*0 lets the os assign the port. The port is 
         then accessible with the local_addr method */
         let sock = Arc::new(
-            UdpSocket::bind("172.20.10.7:0").await
+            UdpSocket::bind("192.168.1.90:40000").await
                                             .unwrap()
                                         );
-        
         let (receive_queue,
              send_queue,
              action_queue,
@@ -233,6 +235,12 @@ mod tests {
             )
              = build_queues();
              
+        let active_peers = ActivePeers::build_mutex();
+
+        let mut my_data = Peer::new();
+        my_data.set_name(vec![97, 110, 105, 116]);
+        let my_data = Arc::new(my_data.clone());
+
         {
             let packet = PacketBuilder::hello_packet();
             let sock_addr = "176.169.27.221:9157".parse().unwrap();
@@ -266,6 +274,9 @@ mod tests {
                 Arc::clone(&action_queue_state),
                 Arc::clone(&process_queue),
                 Arc::clone(&process_queue_state),
+                Arc::clone(&active_peers),
+                Arc::clone(&my_data)
+
             );
                           
         let f5 = sender(Arc::clone(&sock),
@@ -277,7 +288,7 @@ mod tests {
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
 
-        join!(f1,f2,f3,f4);
+        join!(f1,f2,f3,f4, f5);
     }
 
 }

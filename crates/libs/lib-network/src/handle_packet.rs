@@ -24,6 +24,7 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                     match Queue::lock_and_pop(Arc::clone(&receive_queue)){
                         Some((packet, sock_addr))=> 
                             /*receive queue is not empty get a packet and handle it*/
+                            /*verif packet? */
                             handle_packet(packet, sock_addr,
                                  Arc::clone(&pending_ids)
                                  /*return the action required */
@@ -90,7 +91,7 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
                 },
                 Err(CongestionHandlerError::NoPacketWithIdError) =>
                              Err(CongestionHandlerError::NoPacketWithIdError),
-                _ => panic!("Shouldn't happen"),
+                _ => panic!("Shouldn't happen, handle packet"),
             }
             /*Mutex is dropped here */
     };
@@ -109,7 +110,7 @@ pub fn handle_packet(packet: Packet, socket_addr: SocketAddr,
             but with negligible proba ? */
         Err(CongestionHandlerError::AddrAndIdDontMatchError)=>
                              Err(HandlingError::InvalidPacketError),
-        Err(_) => panic!("Shouldn't happen"),
+        Err(_) => panic!("Shouldn't happen, handle packet "),
     }
 
 }
@@ -120,46 +121,36 @@ fn handle_request_packet(packet: Packet, socket_addr: SocketAddr,
                                 //should add self_info with public key root, etc..
                                 )
                                             ->Result<Action, HandlingError>{
-
+    let id = packet.get_id();
     match packet.get_packet_type() {
-        PacketType::NoOp => Ok(Action::A),
-        PacketType::Error => Ok(Action::A),
+        PacketType::NoOp =>{
+            println!("Received NoOp from peer at {}\n", socket_addr);
+            Ok(Action::ProcessNoOp(socket_addr))
+        },
+        PacketType::Error => {
+            println!("Received error from peer at {}\n", socket_addr);
+            Ok(Action::ProcessError(*id, packet.get_body().to_owned(), socket_addr))
+        },
         PacketType::Hello =>{
-            println!("Received hello from {}\n", &socket_addr);
-            Ok(Action::SendHelloReply(*packet.get_id(), socket_addr))
+            println!("Received hello from peer at {}\n", &socket_addr);
+            /*change to process hello reply */
+            {
+                let mut extensions : [u8;4] = [0;4];
+                extensions.copy_from_slice(&packet.get_body().as_slice()[0..4]);
+                let extensions = match extensions[3] {
+                    /*No extensions */
+                    0 => None,
+                    _=> Some(extensions),
+                };
+                let name = packet.get_body().as_slice()[4..*packet.get_body_length()].to_vec();
+                /*id is transmitted to be reused in a send hello reply */
+                Ok(Action::ProcessHello(*id, extensions, name,
+                                    socket_addr))
+            }
         }
-        PacketType::PublicKey=>{
-            todo!()
-            // Ok(Action::SendPublicKeyReply(..))
-        },
-        PacketType::Root => Ok(Action::A),
-        /*Exports should have its own send/receive queue?*/
-        PacketType::Datum => Ok(Action::A),
-        PacketType::NatTraversal => Ok(Action::A),
-        /*Invalid packet, should send error*/
-        _ => Err(HandlingError::InvalidPacketError),
-    }
-}
-
-/*Client */
-fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
-                                     pending: Arc<Mutex<PendingIds>>)
-                                        ->Result<Action, HandlingError>{
-
-    match packet.get_packet_type() {
-        PacketType::ErrorReply => {
-            let error_message = packet.get_body().to_owned();
-            println!("Received ErrorReply with body: {}\n",
-                    String::from_utf8_lossy(error_message.as_slice()));
-            Ok(Action::ProcessErrorReply(error_message, socket_addr))
-        },
-        PacketType::HelloReply => {
-            println!("Received HelloReply from peer at {}\n", socket_addr);
-            Ok(Action::ProcessHelloReply(socket_addr))
-        },
-        PacketType::PublicKeyReply => {
-            println!("Received PublicKeyReply from peer at {}\n", socket_addr);
-            Ok(Action::StorePublicKey(
+        PacketType::PublicKey=> {
+            println!("Received PublicKey from peer at {}\n", socket_addr);
+            Ok(Action::ProcessPublicKey(*id,
                 match packet.get_body_length(){
                     /*Peer doesn't implement signatures */
                 0 => None,
@@ -171,9 +162,7 @@ fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
                     }),
                 }, socket_addr))
         },
-        PacketType::RootReply =>{
-            println!("Receive RootReply from peer at {}\n", socket_addr);
-            Ok(Action::StoreRoot(
+        PacketType::Root => Ok(Action::ProcessRoot(*id,
                 match packet.get_body_length(){
                     /*Peer doesn't implement signatures */
                 0 => None,
@@ -183,20 +172,85 @@ fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
                         root.copy_from_slice(&packet.get_body().as_slice()[0..32]);
                         root
                     }),
-                }, socket_addr))
-        },
-        PacketType::Datum =>{
-            println!("Receive Datum from peer at {}\n", socket_addr);
-            match packet.valid_hash() {
-                true => Ok(Action::ProcessDatum(packet.get_body().to_owned(), socket_addr)),
-                false => Err(HandlingError::InvalidHashError),
+                }, socket_addr)),
+        /*Exports should have its own send/receive queue?*/
+        PacketType::GetDatum => Ok(Action::ProcessGetDatum(*id,
+            {
+                let mut hash : [u8;32] = [0;32];
+                hash.copy_from_slice( &packet.get_body().as_slice()[0..32]);
+                hash
             }
-        },
+            , socket_addr)),
+        PacketType::NatTraversal => Ok(Action::A),
+        /*Invalid packet, should send error*/
+        _ => Err(HandlingError::InvalidPacketError),
+    }
+}
+
+/*Client */
+fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
+                                     pending: Arc<Mutex<PendingIds>>)
+                                        ->Result<Action, HandlingError>{
+
+    match packet.get_packet_type(){
+        PacketType::ErrorReply => {
+                let error_message = packet.get_body().to_owned();
+                println!("Received ErrorReply with body: {}\n",
+                        String::from_utf8_lossy(error_message.as_slice()));
+                Ok(Action::ProcessErrorReply(error_message, socket_addr))
+            },
+        PacketType::HelloReply => {
+                println!("Received HelloReply from peer at {}\n", socket_addr);
+                let mut extensions : [u8;4] = [0;4];
+                extensions.copy_from_slice(&packet.get_body().as_slice()[0..4]);
+                let extensions = match extensions[3] {
+                    /*No extensions */
+                    0 => None,
+                    _=> Some(extensions),
+                };
+                let name = packet.get_body().as_slice()[4..*packet.get_body_length()].to_vec();
+                Ok(Action::ProcessHelloReply(extensions, name,
+                                    socket_addr))
+            },
+        PacketType::PublicKeyReply => {
+                println!("Received PublicKeyReply from peer at {}\n", socket_addr);
+                Ok(Action::ProcessPublicKeyReply(
+                    match packet.get_body_length(){
+                        /*Peer doesn't implement signatures */
+                    0 => None,
+                        /*Peer implements signatures */
+                    _ => Some({
+                            let mut public_key: [u8;64] = [0;64];
+                            public_key.copy_from_slice(&packet.get_body().as_slice()[0..64]);
+                            public_key
+                        }),
+                    }, socket_addr))
+            },
+        PacketType::RootReply =>{
+                println!("Receive RootReply from peer at {}\n", socket_addr);
+                Ok(Action::ProcessRootReply(
+                    match packet.get_body_length(){
+                        /*Peer doesn't implement signatures */
+                    0 => None,
+                        /*Peer implements signatures */
+                    _ => Some({
+                            let mut root: [u8;32] = [0;32];
+                            root.copy_from_slice(&packet.get_body().as_slice()[0..32]);
+                            root
+                        }),
+                    }, socket_addr))
+            },
+        PacketType::Datum =>{
+                println!("Receive Datum from peer at {}\n", socket_addr);
+                match packet.valid_hash() {
+                    true => Ok(Action::ProcessDatum(packet.get_body().to_owned(), socket_addr)),
+                    false => Err(HandlingError::InvalidHashError),
+                }
+            },
         PacketType::NatTraversalReply =>{
-            println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
-            Ok(Action::A)
-        },
+                println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
+                Ok(Action::A)
+            },
         _=> Err(HandlingError::InvalidPacketError),
     }
-
 }

@@ -10,26 +10,26 @@ use crate::packet::{*, self};
 use crate::action::*;
 
 #[derive(Default)]
-pub struct ActiveSockets{
-    sockets: Vec<SocketAddr>,
-}
+// pub struct ActiveSockets{
+//     sockets: Vec<SocketAddr>,
+// }
 
-impl ActiveSockets {
-    fn build_mutex()->Arc<Mutex<Self>>{
-        Arc::new(Mutex::new(Self{ sockets: vec![] }))
-    }
+// impl ActiveSockets {
+//     fn build_mutex()->Arc<Mutex<Self>>{
+//         Arc::new(Mutex::new(Self{ sockets: vec![] }))
+//     }
 
-    fn add_addr(&mut self, sock_addr: SocketAddr){
+//     fn add_addr(&mut self, sock_addr: SocketAddr){
 
-    }
+//     }
 
-    fn pop_addr(&mut self, sock_addr: SocketAddr){
-        let sock_addr_ind = &mut self.sockets
-                                .iter().position(
-                                    |addr| addr.eq(&sock_addr)
-                                );
-    }
-}
+//     fn pop_addr(&mut self, sock_addr: SocketAddr){
+//         let sock_addr_ind = &mut self.sockets
+//                                 .iter().position(
+//                                     |addr| addr.eq(&sock_addr)
+//                                 );
+//     }
+// }
 
 pub struct ReceiveQueue {
     packets_to_treat: VecDeque<(Packet, SocketAddr)>,
