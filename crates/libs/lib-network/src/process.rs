@@ -1,23 +1,28 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex,RwLock};
 
 use crate::congestion_handler::*;
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
 
-pub async fn process_task(process_queue: Arc<Mutex<Queue<Action>>>,
-                          process_queue_state: Arc<QueueState>,
-                          action_queue: Arc<Mutex<Queue<Action>>>,
+pub async fn client_task(){
+
+}
+
+pub async fn process_task(action_queue: Arc<Mutex<Queue<Action>>>,
                           action_queue_state: Arc<QueueState>,
+                          process_queue: Arc<RwLock<Queue<Action>>>,
+                          process_queue_state: Arc<QueueState>,
                           active_peers: Arc<Mutex<ActivePeers>>,
                           my_data: Arc<Peer>,
+                        //   subtasks: Vec<Arc<RwLock<(Queue<Action>, QueueState)>>>
                           //tree: ?
                           //hash_map:?
                           //self_data:?
                         ){
     tokio::spawn(async move {
         loop {
-            match Queue::lock_and_pop(Arc::clone(&process_queue)){
+            match Queue::write_lock_and_pop(Arc::clone(&process_queue)){
                 Some(action)=> {
                     /*action queue is not empty get an action and handle it*/
                     // println!("process: {:?}\n", action);
@@ -131,6 +136,12 @@ pub fn process_action(action : Action,
             return;
         }, 
         _=>println!("Shouldn't happen: {:?}", action),
+    }
+
+    /*Queue to peek the main queues */
+    pub async fn register(peek_queue: Arc<RwLock<Queue<Action>>>,
+                        ){
+
     }
 
 }

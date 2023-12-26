@@ -1,6 +1,7 @@
 use std::error;
 use std::net::UdpSocket;
 use std::net::SocketAddr;
+use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 
 use crate::packet;
@@ -19,7 +20,7 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)
                                 send_queue_state: Arc<QueueState>,
                                 action_queue: Arc<Mutex<Queue<Action>>>,
                                 action_queue_state: Arc<QueueState>,
-                                process_queue: Arc<Mutex<Queue<Action>>>,
+                                process_queue: Arc<RwLock<Queue<Action>>>,
                                 process_queue_state: Arc<QueueState>
                             ){
     tokio::spawn(async move {
@@ -56,7 +57,7 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)
 pub fn handle_action(action: Action,
                      send_queue: Arc<Mutex<Queue<(Packet,SocketAddr)>>>,
                      send_queue_state: Arc<QueueState>,
-                     process_queue: Arc<Mutex<Queue<Action>>>,
+                     process_queue: Arc<RwLock<Queue<Action>>>,
                      process_queue_state: Arc<QueueState>
                         ){
     match action {
@@ -140,7 +141,7 @@ pub fn handle_action(action: Action,
         },
         _ =>{
             println!("In handle action: process action:{:?}\n", action);
-            Queue::lock_and_push(Arc::clone(&process_queue), action);
+            Queue::write_lock_and_push(Arc::clone(&process_queue), action);
             QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
         },
     };
