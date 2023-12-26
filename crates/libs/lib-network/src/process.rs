@@ -70,7 +70,7 @@ pub fn process_action(action : Action,
         }, 
         Action::ProcessHello(id, extensions, name, sock_addr) =>{
             println!("Received Hello packet from {}\n", sock_addr);
-            ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
+            /*Send Hello reply then process the hello */
             Queue::lock_and_push(Arc::clone(&action_queue),
                                     Action::SendHelloReply(id,
                                           my_data.get_extensions().unwrap(),
@@ -79,6 +79,8 @@ pub fn process_action(action : Action,
                                         )
                     );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            /*Add peer and set peer timer (180s) */
+            ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
             return;
         }, 
         Action::ProcessError(id, error_msg, sock_addr) =>{
@@ -112,7 +114,8 @@ pub fn process_action(action : Action,
             return;
         }, 
         Action::ProcessErrorReply(err_msg_reply, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            println!("Received ErrorReply packet with message:{}\n From {}\n",
+                                 String::from_utf8_lossy(&err_msg_reply), sock_addr);
             return;
         }, 
         Action::ProcessPublicKeyReply(public_key, sock_addr) =>{
