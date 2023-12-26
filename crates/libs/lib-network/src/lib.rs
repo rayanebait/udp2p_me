@@ -259,8 +259,8 @@ mod tests {
             Arc::clone(&pending_ids),
                 Arc::clone(&receive_queue),
                 Arc::clone(&receive_queue_state),
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state));
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state));
         let f3 = handle_action_task(
                 Arc::clone(&send_queue),
                 Arc::clone(&send_queue_state),
@@ -288,7 +288,7 @@ mod tests {
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
 
-        join!(f1,f2,f3,f4, f5);
+        join!(f1,f2,f3,f4,f5);
     }
 
 }

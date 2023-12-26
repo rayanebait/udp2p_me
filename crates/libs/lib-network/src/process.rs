@@ -1,13 +1,10 @@
+use std::error;
 use std::sync::{Arc, Mutex,RwLock};
 
 use crate::congestion_handler::*;
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
-
-pub async fn client_task(){
-
-}
 
 pub async fn process_task(action_queue: Arc<Mutex<Queue<Action>>>,
                           action_queue_state: Arc<QueueState>,
@@ -49,8 +46,6 @@ pub async fn process_task(action_queue: Arc<Mutex<Queue<Action>>>,
             };
         }
     }).await;
-    
-
 }
 
 pub fn process_action(action : Action,
@@ -89,23 +84,35 @@ pub fn process_action(action : Action,
             return;
         }, 
         Action::ProcessError(id, error_msg, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            println!("Received Error with body: {}\n from {}\n",
+                                String::from_utf8(error_msg).unwrap(),
+                                sock_addr);
             return;
         }, 
         Action::ProcessPublicKey(id, public_key, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            Queue::lock_and_push(Arc::clone(&action_queue),
+                                    Action::SendPublicKeyReply(id,
+                                        public_key,
+                                        sock_addr)
+                    );
+            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key);
             return;
         }, 
-        Action::ProcessRoot(id, public_key, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+        Action::ProcessRoot(id, root, sock_addr) =>{
+            Queue::lock_and_push(Arc::clone(&action_queue),
+                                    Action::SendRootReply(id,
+                                        root,
+                                        sock_addr)
+                    );
+            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            ActivePeers::set_peer_root(active_peers, sock_addr, root);
             return;
         }, 
         Action::ProcessGetDatum(id, hash, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
             return;
         }, 
         Action::ProcessHelloReply(extensions, name,sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
             ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
             /*keep alive ? */
             // Queue::lock_and_push(Arc::clone(&action_queue),
@@ -125,10 +132,12 @@ pub fn process_action(action : Action,
         }, 
         Action::ProcessPublicKeyReply(public_key, sock_addr) =>{
             println!("Received Hello packet from {}\n", sock_addr);
+            ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key);
             return;
         }, 
         Action::ProcessRootReply(root, sock_addr) =>{
             println!("Received Hello packet from {}\n", sock_addr);
+            ActivePeers::set_peer_root(active_peers, sock_addr, root);
             return;
         }, 
         Action::ProcessDatum(datum, sock_addr) =>{

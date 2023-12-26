@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, PoisonError, Condvar};
+use std::sync::{Arc, Mutex, PoisonError, Condvar, RwLock};
 
 use futures::future::pending;
 
@@ -15,8 +15,8 @@ pub enum HandlingError{
 pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                           receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
                           receive_queue_state: Arc<QueueState>,
-                          action_queue: Arc<Mutex<Queue<Action>>>,
-                          action_queue_state: Arc<QueueState>){
+                          process_queue: Arc<RwLock<Queue<Action>>>,
+                          process_queue_state: Arc<QueueState>){
 
         tokio::spawn(async move {
             loop {
@@ -45,8 +45,8 @@ pub async fn handle_packet_task(pending_ids: Arc<Mutex<PendingIds>>,
                     Ok(action)=> {
                             /* we have an action, push it to the queue*/
                             println!("push action (handle packet)");
-                            Queue::lock_and_push(Arc::clone(&action_queue), action);
-                            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                            Queue::write_lock_and_push(Arc::clone(&process_queue), action);
+                            QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
                             continue
                         }
                     Err(HandlingError::InvalidPacketError)=>todo!(),

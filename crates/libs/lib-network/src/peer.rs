@@ -222,7 +222,6 @@ pub mod peer {
                     peer.public_key = public_key;
                 }
             }
-
         }
         /*Checks the internal timer attached to peer to see if it is elapsed */
         /*The keep alive is done internally in every other methods  */
