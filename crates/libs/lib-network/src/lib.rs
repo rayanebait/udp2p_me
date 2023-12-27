@@ -192,7 +192,7 @@ mod tests {
                         .build()
                         .unwrap();
 
-        let hello_packet = PacketBuilder::hello_packet();
+        let hello_packet = PacketBuilder::noop_packet();
         let raw_hello_packet = hello_packet.as_bytes();
         let raw_packet = packet.as_bytes();
 
@@ -201,7 +201,7 @@ mod tests {
     }
     #[tokio::test]
     async fn handshake_with_pi(){
-        let packet = PacketBuilder::hello_packet();
+        let packet = PacketBuilder::noop_packet();
         let packet2 = PacketBuilder::new()
                             .body(b"j'ai rotey :)".to_vec())
                             .gen_id()
@@ -241,10 +241,10 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
         {
-            let packet = PacketBuilder::hello_packet();
+            let packet = PacketBuilder::noop_packet();
             let sock_addr = "176.169.27.221:9157".parse().unwrap();
             Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
-            let packet = PacketBuilder::hello_packet();
+            let packet = PacketBuilder::noop_packet();
             let sock_addr2 = "176.169.27.221:37086".parse().unwrap();
             Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr2))
         }
@@ -288,6 +288,80 @@ mod tests {
         // println!("Runtime has {} active tasks", n);
 
         join!(f1,f2,f3,f4,f5);
+    }
+
+    #[tokio::test(flavor="multi_thread", worker_threads=10)]
+    async fn register_to_server2(){
+        /*0 lets the os assign the port. The port is 
+        then accessible with the local_addr method */
+        let sock = Arc::new(
+            UdpSocket::bind("192.168.1.90:40000").await
+                                            .unwrap()
+                                        );
+        let (receive_queue,
+             send_queue,
+             action_queue,
+             process_queue,
+             pending_ids,
+             receive_queue_state,
+             action_queue_state,
+             send_queue_state,
+             process_queue_state,
+            )
+             = build_queues();
+             
+        let active_peers = ActivePeers::build_mutex();
+
+        let mut my_data = Peer::new();
+        my_data.set_name(vec![97, 110, 105, 116]);
+        let my_data = Arc::new(my_data.clone());
+
+        let f1 = receiver(Arc::clone(&sock),
+                 Arc::clone(&receive_queue),
+                 Arc::clone(&receive_queue_state));
+                 
+                 
+        let f2 = handle_packet_task(
+            Arc::clone(&pending_ids),
+                Arc::clone(&receive_queue),
+                Arc::clone(&receive_queue_state),
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state));
+        let f3 = handle_action_task(
+                Arc::clone(&send_queue),
+                Arc::clone(&send_queue_state),
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state),
+            );
+        let f4 = process_task(
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_state),
+                Arc::clone(&active_peers),
+                Arc::clone(&my_data)
+
+            );
+                          
+        let f5 = sender(Arc::clone(&sock),
+                Arc::clone(&send_queue),
+                Arc::clone(&send_queue_state),
+                Arc::clone(&pending_ids));
+
+        // let metrics = Handle::current().metrics();
+        // let n = metrics.active_tasks_count();
+        // println!("Runtime has {} active tasks", n);
+        let reg = register(
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&my_data));
+
+        join!(f1,f2,f3,f4,f5, reg);
+
     }
 
 }

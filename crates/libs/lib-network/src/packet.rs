@@ -142,9 +142,16 @@ impl PacketBuilder {
                                 .build();
         hello_packet.unwrap()
     }
-    pub fn hello_packet()->Packet{
+    pub fn hello_packet(extensions: Option<&[u8;4]>, name: Vec<u8>)->Packet{
+        let mut body = match extensions{
+            Some(extensions) => extensions.to_vec(),
+            None=>vec![0,0,0,0],
+        };
+        let mut name = name.clone();
+        body.append(&mut name);
         let hello_packet = PacketBuilder::new()
                                 .gen_id()
+                                .body(body)
                                 .packet_type(PacketType::Hello)
                                 .build();
         hello_packet.unwrap()

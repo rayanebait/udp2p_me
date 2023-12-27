@@ -72,7 +72,7 @@ pub fn handle_action(action: Action,
         Action::SendHello(extensions, name, sock_addr) =>{
             /*DONE */
             println!("Sending Hello packet to {}\n", sock_addr);
-            let packet = PacketBuilder::hello_packet();
+            let packet = PacketBuilder::hello_packet(extensions.as_ref(), name);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
             QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
             return;

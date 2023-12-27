@@ -5,6 +5,10 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex,RwLock};
 use std::time::Duration;
 
+use futures::future::select;
+use futures::stream::FuturesUnordered;
+use tokio::time::{sleep, Sleep};
+
 use crate::{congestion_handler::*, action};
 use crate::action::Action;
 use crate::packet::PacketBuilder;
@@ -96,7 +100,8 @@ pub fn process_action(action : Action,
         Action::ProcessError(id, error_msg, sock_addr) =>{
             /*DONE */
             println!("Received Error with body: {}\n from {}\n",
-                                String::from_utf8_lossy(&error_msg),
+                                // String::from_utf8_lossy(&error_msg),
+                                "abc".to_string(),
                                 sock_addr);
             return;
         }, 
@@ -191,117 +196,57 @@ pub fn process_action(action : Action,
                           my_data: Arc<Peer>
                          )
     {
-        tokio::spawn(async move {
-                /*Wait notify all from receive task */
+        let server_sock_addr : SocketAddr= "81.194.27.155:8443".parse().unwrap();
+        Queue::lock_and_push(
+            Arc::clone(&action_queue),
+            Action::SendHello(
+                    None,
+                    my_data.get_name().unwrap(),
+                    server_sock_addr
+            ));
 
-        }).await;
+        peek_until_hello_reply_from(
+            Arc::clone(&peek_process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            server_sock_addr).await;
     }
 
 
-    pub async fn peek_until_hello_from(
+    pub async fn peek_until_hello_reply_from(
                             peek_process_queue: Arc<RwLock<Queue<Action>>>,
                             process_queue_state: Arc<QueueState>,
                             action_queue: Arc<Mutex<Queue<Action>>>,
                             action_queue_state: Arc<QueueState>,
                             sock_addr: SocketAddr
-                        )-> Result<Action, tokio::task::JoinError>
+                        )-> Result<Action, PeerError>
     {
-        tokio::spawn(async move {
-            loop {
-                /*Wait notify all from receive task */
-                let front = match
-                     Queue::read_lock_and_peek(
-                        Arc::clone(&peek_process_queue)
-                        ){
-                            Some(front) => front,
-                            None => {
-                                process_queue_state.wait();
-                                continue
-                            }
-                        };
-                match front {
-                    Action::ProcessHelloReply(..,
-                                 addr)=> 
-                                    if addr == sock_addr{
-                                        break front
-                                    } else {
-                                        continue
-                                    },
-                    _ => continue,
-                }
+        loop {
+            let timeout = sleep(Duration::from_secs(3));
+            if timeout.is_elapsed() {
+                break Err(PeerError::ResponseTimeout)
             }
-        }).await
-    }
-
-    pub async fn peek_until_public_key_from(
-                            peek_process_queue: Arc<RwLock<Queue<Action>>>,
-                            process_queue_state: Arc<QueueState>,
-                            action_queue: Arc<Mutex<Queue<Action>>>,
-                            action_queue_state: Arc<QueueState>,
-                            sock_addr: SocketAddr
-                        )-> Result<Result<Action, PeerError>, tokio::task::JoinError>
-    {
-        tokio::spawn(async move {
-            let timeout = tokio::time::sleep(Duration::from_secs(3));
-            loop {
-                if timeout.is_elapsed() {
-                    break Err(PeerError::ResponseTimeout)
-                }
-                /*Wait notify all from receive task */
-                let front = match
-                     Queue::read_lock_and_peek(
-                        Arc::clone(&peek_process_queue)
-                        ){
-                            Some(front) => front,
-                            None => {
-                                process_queue_state.wait();
-                                continue
-                            }
-                        };
-                match front {
-                    Action::ProcessHelloReply(..,
-                                 addr)=> 
-                                    if addr == sock_addr{
-                                        break Ok(front)
-                                    } else {
-                                        continue
-                                    },
-                    _ => continue,
-                }
+            /*Wait notify all from receive task */
+            let front = match
+                    Queue::read_lock_and_peek(
+                    Arc::clone(&peek_process_queue)
+                    ){
+                        Some(front) => front,
+                        None => {
+                            process_queue_state.wait();
+                            continue
+                        }
+                    };
+            match front {
+                Action::ProcessHelloReply(..,
+                                addr)=> 
+                                if addr == sock_addr{
+                                    break Ok(front)
+                                } else {
+                                    continue
+                                },
+                _ => continue,
             }
-        }).await
-    }
-    pub async fn peek_until_root_reply_from(
-                            peek_process_queue: Arc<RwLock<Queue<Action>>>,
-                            process_queue_state: Arc<QueueState>,
-                            action_queue: Arc<Mutex<Queue<Action>>>,
-                            action_queue_state: Arc<QueueState>,
-                            sock_addr: SocketAddr
-                        )-> Result<Result<Action, PeerError>, tokio::task::JoinError>
-    {
-        tokio::spawn(async move {
-            loop {
-                /*Wait notify all from receive task */
-                let front = match
-                     Queue::read_lock_and_peek(
-                        Arc::clone(&peek_process_queue)
-                        ){
-                            Some(front) => front,
-                            None => {
-                                process_queue_state.wait();
-                                continue
-                            }
-                        };
-                match front {
-                    Action::ProcessHelloReply(..,
-                                 addr)=> 
-                                    if addr == sock_addr{
-                                        break Ok(front)
-                                    } else {
-                                        continue
-                                    },
-                    _ => continue,
-                }
-            }
-        }).await
+        }
     }
