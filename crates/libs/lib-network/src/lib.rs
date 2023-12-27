@@ -240,7 +240,6 @@ mod tests {
         let mut my_data = Peer::new();
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
-
         {
             let packet = PacketBuilder::hello_packet();
             let sock_addr = "176.169.27.221:9157".parse().unwrap();

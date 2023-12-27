@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
 pub enum Action{
-    A,
     /*A hashmap is available in ActivePeers: SocketAddr to Peer */
     SendNoOp(SocketAddr),
     SendRoot(Option<[u8;32]>, SocketAddr),

@@ -135,6 +135,13 @@ impl PacketBuilder {
             ..PacketBuilder::default()
         }
     }
+    pub fn noop_packet()->Packet{
+        let hello_packet = PacketBuilder::new()
+                                .gen_id()
+                                .packet_type(PacketType::NoOp)
+                                .build();
+        hello_packet.unwrap()
+    }
     pub fn hello_packet()->Packet{
         let hello_packet = PacketBuilder::new()
                                 .gen_id()
@@ -559,6 +566,7 @@ impl Packet {
     // // }
 
     /*Verify the hash of a Packet during p2p export/import */
+    /*Should also take a hash  */
     pub fn valid_hash(&self)->bool{
         let body = self.get_body();
         let given_hash = &body.as_slice()[0..32];

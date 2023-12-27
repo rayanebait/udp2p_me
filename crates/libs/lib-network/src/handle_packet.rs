@@ -181,7 +181,7 @@ fn handle_request_packet(packet: Packet, socket_addr: SocketAddr,
                 hash
             }
             , socket_addr)),
-        PacketType::NatTraversal => Ok(Action::A),
+        PacketType::NatTraversal => todo!(),
         /*Invalid packet, should send error*/
         _ => Err(HandlingError::InvalidPacketError),
     }
@@ -249,7 +249,7 @@ fn handle_response_packet(packet: Packet, socket_addr: SocketAddr,
             },
         PacketType::NatTraversalReply =>{
                 println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
-                Ok(Action::A)
+                todo!()
             },
         _=> Err(HandlingError::InvalidPacketError),
     }

@@ -62,10 +62,15 @@ pub fn handle_action(action: Action,
                         ){
     match action {
         Action::SendNoOp(sock_addr) =>{
+            /*DONE */
             println!("Sending NoOp packet to {}\n", sock_addr);
+            let packet = PacketBuilder::noop_packet();
+            Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
+            QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
             return;
         }, 
         Action::SendHello(extensions, name, sock_addr) =>{
+            /*DONE */
             println!("Sending Hello packet to {}\n", sock_addr);
             let packet = PacketBuilder::hello_packet();
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -73,6 +78,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendError(error_msg, sock_addr) =>{
+            /*DONE */
             println!("Sending Error packet to {}\n", sock_addr);
             let packet = PacketBuilder::error_packet(Some(error_msg));
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -80,6 +86,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendPublicKey(public_key, sock_addr) =>{
+            /*DONE */
             println!("Sending PublicKey packet to {}\n", sock_addr);
             let packet = PacketBuilder::public_key_packet(public_key);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -87,6 +94,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendRoot(root, sock_addr) =>{
+            /*DONE */
             println!("Sending Root packet to {}\n", sock_addr);
             let packet = PacketBuilder::root_packet(root);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -94,6 +102,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendGetDatumWithHash(hash, sock_addr) =>{
+            /*DONE */
             println!("Sending GetDatum with hash {:?} packet to {}\n", hash, sock_addr);
             let packet = PacketBuilder::get_datum_packet(hash);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -101,6 +110,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendHelloReply(id, extensions, name, sock_addr) =>{
+            /*DONE */
             println!("Sending HelloReply packet to {}\n", sock_addr);
             let packet = PacketBuilder::hello_reply_packet(&id, &extensions, name);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -108,6 +118,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendErrorReply(id, err_reply_msg, sock_addr) =>{
+            /*DONE */
             println!("Sending ErrorReply packet to {}\n", sock_addr);
             let packet = PacketBuilder::error_reply_packet(&id, err_reply_msg);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -115,6 +126,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendPublicKeyReply(id, public_key, sock_addr) =>{
+            /*DONE */
             println!("Sending PublicKeyReply packet to {}\n", sock_addr);
             let packet = PacketBuilder::public_key_reply_packet(public_key, id);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -122,6 +134,7 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendRootReply(id, root, sock_addr) =>{
+            /*DONE */
             println!("Sending RootReply packet to {}\n", sock_addr);
             let packet = PacketBuilder::root_reply_packet(&id, root);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
@@ -129,18 +142,16 @@ pub fn handle_action(action: Action,
             return;
         }, 
         Action::SendDatumWithHash(id,hash , datum, sock_addr) =>{
+            /*DONE */
             println!("Sending Datum with hash {:?} packet from {}\n",hash, sock_addr);
             let packet = PacketBuilder::datum_packet(&id, hash, datum);
             Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
             QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
             return;
         }, 
-        Action::A =>{
-            println!("Action A");
-            return;
-        },
         _ =>{
-            println!("In handle action: process action:{:?}\n", action);
+            /*TO DO*/
+            println!("Shouldn't happen if not planned.");
             Queue::write_lock_and_push(Arc::clone(&process_queue), action);
             QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
         },

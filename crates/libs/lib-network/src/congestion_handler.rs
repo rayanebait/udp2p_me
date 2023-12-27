@@ -98,6 +98,17 @@ impl<T: Clone> Queue<T>{
         Arc::new(RwLock::new(Self{ data: VecDeque::new() }))
     }
 
+    pub fn read_lock_and_peek(queue: Arc<RwLock<Queue<T>>>)->Option<T>{
+        let mut queue_guard = 
+            match queue.read(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(poison_error)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.peek_front()
+    }
     pub fn write_lock_and_push(queue: Arc<RwLock<Queue<T>>>,
                      data: T){
         let mut queue_guard = 
@@ -153,6 +164,14 @@ impl<T: Clone> Queue<T>{
         self.data.pop_front()
     }
 
+    pub fn peek_front(&self)->Option<T> {
+        let mut front = self.data.front();
+        let front = match front{
+            Some(front)=> Some(front.clone()),
+            None=> None,
+        };
+        front
+    }
     pub fn get_front(&mut self)->Option<T> {
         let mut front = self.data.front().cloned();
         let front = match front{

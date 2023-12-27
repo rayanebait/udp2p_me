@@ -1,19 +1,25 @@
+use core::panic;
 use std::error;
 use std::sync::{Arc, Mutex,RwLock};
 
-use crate::congestion_handler::*;
+use crate::{congestion_handler::*, action};
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
 
+/*Chaque sous task du CLI lit passivement la process queue 
+et push des paquets dans l'action queue en conséquence ?*/
 pub async fn process_task(action_queue: Arc<Mutex<Queue<Action>>>,
                           action_queue_state: Arc<QueueState>,
                           process_queue: Arc<RwLock<Queue<Action>>>,
                           process_queue_state: Arc<QueueState>,
                           active_peers: Arc<Mutex<ActivePeers>>,
                           my_data: Arc<Peer>,
-                        //   subtasks: Vec<Arc<RwLock<(Queue<Action>, QueueState)>>>
                           //tree: ?
+                          //For each peer build a physical tree and fill it ?
+                          //Option<mk_fs>, when receiving a getdatum, check if None or some
+                          //if None simply reply nodatum, if Some: read hash and
+                          //send datum. 
                           //hash_map:?
                           //self_data:?
                         ){
@@ -54,7 +60,7 @@ pub fn process_action(action : Action,
                       active_peers: Arc<Mutex<ActivePeers>>,
                       my_data: Arc<Peer>
                       //Pour store public key et root -> 
-                      //Hashmap: sockaddr vers peer
+                      //hashmap: sockaddr vers peer
                       //peer.set_public_key...
                       //peer.set_root..
                       //active_peers: Arc<ActivePeers>
@@ -65,12 +71,13 @@ pub fn process_action(action : Action,
                       ){
     match action {
         Action::ProcessNoOp(sock_addr) =>{
+            /*DONE */
             println!("Received NoOp packet from {}\n", sock_addr);
             return;
         }, 
         Action::ProcessHello(id, extensions, name, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
-            /*Send Hello reply then process the hello */
+            /*DONE */
+            /*Send Hello reply then process the hello. Never fails. */
             Queue::lock_and_push(Arc::clone(&action_queue),
                                     Action::SendHelloReply(id,
                                           my_data.get_extensions().unwrap(),
@@ -84,73 +91,152 @@ pub fn process_action(action : Action,
             return;
         }, 
         Action::ProcessError(id, error_msg, sock_addr) =>{
+            /*DONE */
             println!("Received Error with body: {}\n from {}\n",
-                                String::from_utf8(error_msg).unwrap(),
+                                String::from_utf8_lossy(&error_msg),
                                 sock_addr);
             return;
         }, 
         Action::ProcessPublicKey(id, public_key, sock_addr) =>{
-            Queue::lock_and_push(Arc::clone(&action_queue),
-                                    Action::SendPublicKeyReply(id,
-                                        public_key,
-                                        sock_addr)
-                    );
-            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key);
+            /*DONE */
+            match ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key){
+                Ok(())=>{
+                    Queue::lock_and_push(Arc::clone(&action_queue),
+                                        Action::SendPublicKeyReply(id,
+                                            public_key,
+                                            sock_addr)
+                        );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::ResponseTimeout)=>{
+                    Queue::lock_and_push(Arc::clone(&action_queue),
+                                        Action::SendErrorReply(id,
+                                            Some(b"Connection timedout,
+                                             proceed to handshake again.\n".to_vec()),
+                                            sock_addr)
+                        );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::UnknownPeer)=>(),
+                _=> panic!("Unkown error in process_action\n"),
+            }
             return;
         }, 
         Action::ProcessRoot(id, root, sock_addr) =>{
-            Queue::lock_and_push(Arc::clone(&action_queue),
-                                    Action::SendRootReply(id,
-                                        root,
-                                        sock_addr)
-                    );
-            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            ActivePeers::set_peer_root(active_peers, sock_addr, root);
+            /*DONE */
+            match ActivePeers::set_peer_root(active_peers, sock_addr, root){
+                Ok(())=>{
+                    Queue::lock_and_push(Arc::clone(&action_queue),
+                                        Action::SendRootReply(id,
+                                            root,
+                                            sock_addr)
+                        );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::ResponseTimeout)=>{
+                    Queue::lock_and_push(Arc::clone(&action_queue),
+                                        Action::SendErrorReply(id,
+                                            Some(b"Connection timedout,
+                                             proceed to handshake again.\n".to_vec()),
+                                            sock_addr)
+                        );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::UnknownPeer)=>(),
+                _=> panic!("Unkown error in process_action\n"),
+            }
             return;
         }, 
         Action::ProcessGetDatum(id, hash, sock_addr) =>{
             return;
         }, 
         Action::ProcessHelloReply(extensions, name,sock_addr) =>{
+            /*DONE */
             ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
-            /*keep alive ? */
-            // Queue::lock_and_push(Arc::clone(&action_queue),
-            //                         Action::SendHelloReply(id,
-            //                               my_data.get_extensions().unwrap(),
-            //                               my_data.get_name().unwrap(),
-            //                               sock_addr
-            //                             )
-            //         );
-            // QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             return;
         }, 
         Action::ProcessErrorReply(err_msg_reply, sock_addr) =>{
+            /*DONE */
             println!("Received ErrorReply packet with message:{}\n From {}\n",
                                  String::from_utf8_lossy(&err_msg_reply), sock_addr);
             return;
         }, 
         Action::ProcessPublicKeyReply(public_key, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            /*DONE */
             ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key);
             return;
         }, 
         Action::ProcessRootReply(root, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            /*DONE */
             ActivePeers::set_peer_root(active_peers, sock_addr, root);
             return;
         }, 
         Action::ProcessDatum(datum, sock_addr) =>{
-            println!("Received Hello packet from {}\n", sock_addr);
+            /*datum is valid at this point (verified in handle packet*/
+            /*or not ? */
             return;
         }, 
         _=>println!("Shouldn't happen: {:?}", action),
     }
+}
 
     /*Queue to peek the main queues */
-    pub async fn register(peek_queue: Arc<RwLock<Queue<Action>>>,
+    pub async fn register(peek_process_queue: Arc<RwLock<Queue<Action>>>,
+                          process_queue_state: Arc<QueueState>,
+                          action_queue: Arc<Mutex<Queue<Action>>>,
+                          action_queue_state: Arc<QueueState>,
+                          my_data: Arc<Peer>
+                         )
+    {
+        tokio::spawn(async move {
+            loop {
+                /*Wait notify all from receive task */
+                process_queue_state.wait();
+                let front = match
+                     Queue::read_lock_and_peek(
+                        Arc::clone(&peek_process_queue)
                         ){
+                            Some(front) => front,
+                            None => continue,
+                        };
+                match front{
+                    Action::ProcessHelloReply(
+                        extensions,
+                        name ,
+                        sock_addr )=>
+                            Queue::lock_and_push(
+                                Arc::clone(&action_queue),
+                                Action::SendRoot(my_data.get_root_hash(), sock_addr)),
+                    _=>continue,
+                }
 
+            }
+        }).await;
     }
 
-}
+    pub async fn peek_until_action(
+                            peek_process_queue: Arc<RwLock<Queue<Action>>>,
+                            process_queue_state: Arc<QueueState>,
+                            action_queue: Arc<Mutex<Queue<Action>>>,
+                            action_queue_state: Arc<QueueState>,
+                            action: Action
+                        )-> Result<Action, tokio::task::JoinError>
+    {
+        tokio::spawn(async move {
+            loop {
+                /*Wait notify all from receive task */
+                process_queue_state.wait();
+                let front = match
+                     Queue::read_lock_and_peek(
+                        Arc::clone(&peek_process_queue)
+                        ){
+                            Some(front) => front,
+                            None => continue,
+                        };
+                match front{
+                    action => break action,
+                    _=>continue,
+                }
+            }
+        }).await
+    }
