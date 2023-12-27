@@ -1,22 +1,21 @@
-
-use std::default;
 use prelude::*;
+use std::default;
 
 // use crate::peer_data::*;
 
 /*For the id generation */
-use nanorand::{Rng, BufferedRng, wyrand::WyRand};
+use nanorand::{wyrand::WyRand, BufferedRng, Rng};
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 /*Utilities */
 use anyhow::Result;
-    
+
 /*Async/net libraries */
-use tokio::net::UdpSocket;
 use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 
 #[derive(Debug)]
-pub enum PacketError{
+pub enum PacketError {
     NoIdError,
     NoTypeError,
     NoLengthError,
@@ -27,7 +26,7 @@ pub enum PacketError{
     UnknownError,
 }
 
-impl std::fmt::Display for PacketError{
+impl std::fmt::Display for PacketError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PacketError::NoIdError => write!(f, "Packet builder failed"),
@@ -42,18 +41,16 @@ impl std::fmt::Display for PacketError{
     }
 }
 
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PacketType{
-    NoOp=0,
+pub enum PacketType {
+    NoOp = 0,
     Error,
     Hello,
     PublicKey,
     Root,
     GetDatum,
     NatTraversal,
-    ErrorReply=128,
+    ErrorReply = 128,
     HelloReply,
     PublicKeyReply,
     RootReply,
@@ -62,7 +59,7 @@ pub enum PacketType{
 }
 
 impl PacketType {
-    fn from_u8(val: u8)-> Result<PacketType, PacketError>{
+    fn from_u8(val: u8) -> Result<PacketType, PacketError> {
         match val {
             0 => return Ok(PacketType::NoOp),
             1 => return Ok(PacketType::Error),
@@ -82,10 +79,9 @@ impl PacketType {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Packet{
-    id: [u8;4],
+pub struct Packet {
+    id: [u8; 4],
     packet_type: PacketType,
     length: usize,
     body: Vec<u8>,
@@ -93,8 +89,8 @@ pub struct Packet{
 }
 
 #[derive(Default)]
-pub struct PacketBuilder{
-    id: Option<[u8;4]>,
+pub struct PacketBuilder {
+    id: Option<[u8; 4]>,
     packet_type: Option<PacketType>,
     length: Option<usize>,
     body: Option<Vec<u8>>,
@@ -102,7 +98,7 @@ pub struct PacketBuilder{
 }
 
 impl PacketBuilder {
-    pub fn build(&self)-> Result<Packet, PacketError>{
+    pub fn build(&self) -> Result<Packet, PacketError> {
         let Some(id) = self.id else {
             return Err(PacketError::InvalidIdError);
         };
@@ -114,11 +110,11 @@ impl PacketBuilder {
             return Err(PacketError::NoLengthError);
         };
         let Some(body) = self.body.to_owned() else {
-            return Err(PacketError::NoBodyError)
+            return Err(PacketError::NoBodyError);
         };
 
         Ok(Packet {
-            id: id, 
+            id: id,
             packet_type: packet_type,
             length: length,
             body: body,
@@ -126,8 +122,8 @@ impl PacketBuilder {
         })
     }
 
-    pub fn new()->Self{
-        Self{
+    pub fn new() -> Self {
+        Self {
             /*nanorand the id */
             packet_type: Some(PacketType::NoOp),
             body: Some(vec![]),
@@ -135,160 +131,156 @@ impl PacketBuilder {
             ..PacketBuilder::default()
         }
     }
-    pub fn noop_packet()->Packet{
+    pub fn noop_packet() -> Packet {
         let hello_packet = PacketBuilder::new()
-                                .gen_id()
-                                .packet_type(PacketType::NoOp)
-                                .build();
+            .gen_id()
+            .packet_type(PacketType::NoOp)
+            .build();
         hello_packet.unwrap()
     }
-    pub fn hello_packet(extensions: Option<&[u8;4]>, name: Vec<u8>)->Packet{
-        let mut body = match extensions{
+    pub fn hello_packet(extensions: Option<&[u8; 4]>, name: Vec<u8>) -> Packet {
+        let mut body = match extensions {
             Some(extensions) => extensions.to_vec(),
-            None=>vec![0,0,0,0],
+            None => vec![0, 0, 0, 0],
         };
         let mut name = name.clone();
         body.append(&mut name);
         let hello_packet = PacketBuilder::new()
-                                .gen_id()
-                                .body(body)
-                                .packet_type(PacketType::Hello)
-                                .build();
+            .gen_id()
+            .body(body)
+            .packet_type(PacketType::Hello)
+            .build();
         hello_packet.unwrap()
     }
 
-    pub fn hello_reply_packet(id: &[u8;4], extensions: &[u8;4], name: Vec<u8>)->Packet{
+    pub fn hello_reply_packet(id: &[u8; 4], extensions: &[u8; 4], name: Vec<u8>) -> Packet {
         let mut body = extensions.to_vec();
         let mut name = name.clone();
         body.append(&mut name);
         let hello_packet = PacketBuilder::new()
-                                .set_id(*id)
-                                .body(body)
-                                .packet_type(PacketType::HelloReply)
-                                .build();
+            .set_id(*id)
+            .body(body)
+            .packet_type(PacketType::HelloReply)
+            .build();
         hello_packet.unwrap()
     }
-    pub fn error_packet(err_msg: Option<Vec<u8>>)->Packet{
-    
-        let err_msg= match err_msg{
-            Some(err_msg)=> err_msg.to_vec(),
+    pub fn error_packet(err_msg: Option<Vec<u8>>) -> Packet {
+        let err_msg = match err_msg {
+            Some(err_msg) => err_msg.to_vec(),
             None => vec![],
         };
 
         let err_packet = PacketBuilder::new()
-                        .gen_id()
-                        .body(err_msg)
-                        .packet_type(PacketType::Error)
-                        .build();
+            .gen_id()
+            .body(err_msg)
+            .packet_type(PacketType::Error)
+            .build();
 
         err_packet.unwrap()
     }
-    pub fn error_reply_packet(id: &[u8;4], err_msg: Option<Vec<u8>>)->Packet{
-    
-        let err_msg= match err_msg{
-            Some(err_msg)=> err_msg.to_vec(),
+    pub fn error_reply_packet(id: &[u8; 4], err_msg: Option<Vec<u8>>) -> Packet {
+        let err_msg = match err_msg {
+            Some(err_msg) => err_msg.to_vec(),
             None => vec![],
         };
 
         let err_reply_packet = PacketBuilder::new()
-                        .set_id(*id)
-                        .body(err_msg)
-                        .packet_type(PacketType::ErrorReply)
-                        .build();
+            .set_id(*id)
+            .body(err_msg)
+            .packet_type(PacketType::ErrorReply)
+            .build();
 
         err_reply_packet.unwrap()
     }
-    pub fn public_key_packet(public_key: Option<[u8;64]>)->Packet{
-        let public_key = match public_key{
-            Some(public_key)=> public_key.to_vec(),
+    pub fn public_key_packet(public_key: Option<[u8; 64]>) -> Packet {
+        let public_key = match public_key {
+            Some(public_key) => public_key.to_vec(),
             None => vec![],
         };
 
         let public_key_packet = PacketBuilder::new()
-                        .gen_id()
-                        .body(public_key)
-                        .packet_type(PacketType::PublicKey)
-                        .build();
+            .gen_id()
+            .body(public_key)
+            .packet_type(PacketType::PublicKey)
+            .build();
 
         public_key_packet.unwrap()
     }
-    pub fn public_key_reply_packet(public_key: Option<[u8;64]>, id: [u8;4])->Packet{
-        let public_key = match public_key{
-            Some(public_key)=> public_key.to_vec(),
+    pub fn public_key_reply_packet(public_key: Option<[u8; 64]>, id: [u8; 4]) -> Packet {
+        let public_key = match public_key {
+            Some(public_key) => public_key.to_vec(),
             None => vec![],
         };
         let public_key_packet = PacketBuilder::new()
-                        .set_id(id)
-                        .body(public_key)
-                        .packet_type(PacketType::PublicKeyReply)
-                        .build();
+            .set_id(id)
+            .body(public_key)
+            .packet_type(PacketType::PublicKeyReply)
+            .build();
 
         public_key_packet.unwrap()
     }
 
-    pub fn root_packet(root: Option<[u8;32]>)->Packet{
-        let root = match root{
-            Some(root)=> root.to_vec(),
+    pub fn root_packet(root: Option<[u8; 32]>) -> Packet {
+        let root = match root {
+            Some(root) => root.to_vec(),
             None => vec![],
         };
 
         let root_packet = PacketBuilder::new()
-                        .gen_id()
-                        .body(root)
-                        .packet_type(PacketType::Root)
-                        .build();
+            .gen_id()
+            .body(root)
+            .packet_type(PacketType::Root)
+            .build();
 
         root_packet.unwrap()
     }
 
-    pub fn root_reply_packet(id: &[u8;4], root: Option<[u8;32]>)->Packet{
-    
-        let root = match root{
-            Some(root)=> root.to_vec(),
+    pub fn root_reply_packet(id: &[u8; 4], root: Option<[u8; 32]>) -> Packet {
+        let root = match root {
+            Some(root) => root.to_vec(),
             None => vec![],
         };
 
         let root_packet = PacketBuilder::new()
-                        .set_id(*id)
-                        .body(root)
-                        .packet_type(PacketType::RootReply)
-                        .build();
+            .set_id(*id)
+            .body(root)
+            .packet_type(PacketType::RootReply)
+            .build();
 
         root_packet.unwrap()
     }
-    pub fn get_datum_packet(hash: [u8;32])->Packet{
-
+    pub fn get_datum_packet(hash: [u8; 32]) -> Packet {
         let get_datum_packet = PacketBuilder::new()
-                        .gen_id()
-                        .body(hash.to_vec())
-                        .packet_type(PacketType::GetDatum)
-                        .build();
+            .gen_id()
+            .body(hash.to_vec())
+            .packet_type(PacketType::GetDatum)
+            .build();
 
         get_datum_packet.unwrap()
     }
-    pub fn datum_packet(id: &[u8;4], hash: [u8;32], datum: Vec<u8>)->Packet{
+    pub fn datum_packet(id: &[u8; 4], hash: [u8; 32], datum: Vec<u8>) -> Packet {
         let mut body = hash.to_vec();
         let mut datum = datum.clone();
         body.append(&mut datum);
         let datum_packet = PacketBuilder::new()
-                        .set_id(*id)
-                        .body(body)
-                        .packet_type(PacketType::GetDatum)
-                        .build();
+            .set_id(*id)
+            .body(body)
+            .packet_type(PacketType::GetDatum)
+            .build();
 
         datum_packet.unwrap()
     }
 
-    pub fn packet_type(&mut self, packet_type: PacketType)->&mut Self{
+    pub fn packet_type(&mut self, packet_type: PacketType) -> &mut Self {
         self.packet_type = Some(packet_type);
         self
     }
 
-    /*WyRand is not cryptographically secure but it is really 
+    /*WyRand is not cryptographically secure but it is really
     fast (16 Gb/s) so won't slow down the p2p protocol */
-    pub fn gen_id(&mut self)-> &mut Self{
+    pub fn gen_id(&mut self) -> &mut Self {
         let mut rng = BufferedRng::new(WyRand::new());
-        let mut buf : [u8;4] = [0; 4];
+        let mut buf: [u8; 4] = [0; 4];
 
         rng.fill(&mut buf);
         self.id = Some(buf);
@@ -296,14 +288,14 @@ impl PacketBuilder {
         self
     }
 
-    pub fn set_id(&mut self, id: [u8;4])-> &mut Self{
+    pub fn set_id(&mut self, id: [u8; 4]) -> &mut Self {
         self.id = Some(id);
         self
     }
-    pub fn body(&mut self, body: Vec<u8>)-> &mut Self{
+    pub fn body(&mut self, body: Vec<u8>) -> &mut Self {
         let body_length = body.len();
 
-        self.length = match body_length{
+        self.length = match body_length {
             0..=1024 => Some(body_length),
             1025.. => panic!("Invalid packet"),
             _ => panic!("Shouldn't happen"),
@@ -313,55 +305,53 @@ impl PacketBuilder {
 
         self
     }
-    pub fn signature(&mut self, signature: Option<[u8;64]>)->&mut Self{
+    pub fn signature(&mut self, signature: Option<[u8; 64]>) -> &mut Self {
         self.signature = signature;
         self
     }
-
 }
 
 impl Packet {
-    pub fn get_id(&self)-> &[u8;4]{
+    pub fn get_id(&self) -> &[u8; 4] {
         &self.id
     }
-    pub fn get_body(&self)-> &Vec<u8>{
+    pub fn get_body(&self) -> &Vec<u8> {
         &self.body
     }
-    pub fn get_body_length(&self)-> &usize{
+    pub fn get_body_length(&self) -> &usize {
         &self.length
     }
-    pub fn get_packet_type(&self)-> &PacketType{
+    pub fn get_packet_type(&self) -> &PacketType {
         &self.packet_type
     }
-    pub fn get_signature(&self)-> Result<&[u8;64], PacketError>{
+    pub fn get_signature(&self) -> Result<&[u8; 64], PacketError> {
         match &self.signature {
-            Some(sig)=> Ok(sig),
+            Some(sig) => Ok(sig),
             None => Err(PacketError::NoSignatureError),
         }
     }
-    pub fn is_response(&self)->bool{
+    pub fn is_response(&self) -> bool {
         let packet_type = self.packet_type as u8;
-        match packet_type{
+        match packet_type {
             0..=7 => return true,
             _ => return false,
         }
     }
 
-    pub fn is(&self, other_packet_type: &PacketType)->bool{
+    pub fn is(&self, other_packet_type: &PacketType) -> bool {
         *self.get_packet_type() == *other_packet_type
     }
 
-
-    pub fn as_bytes(&self)->Vec<u8>{
-        let mut packet_buf : Vec<u8> = vec![];
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut packet_buf: Vec<u8> = vec![];
         for byte in self.id {
             packet_buf.push(byte);
         }
 
         packet_buf.push(self.packet_type as u8);
 
-        packet_buf.push(((self.length>>8)&0xff).try_into().unwrap());
-        packet_buf.push((self.length&0xff).try_into().unwrap());
+        packet_buf.push(((self.length >> 8) & 0xff).try_into().unwrap());
+        packet_buf.push((self.length & 0xff).try_into().unwrap());
 
         for byte in &self.body {
             /*byte is copied ? */
@@ -369,9 +359,11 @@ impl Packet {
         }
 
         match self.signature {
-            Some(sig)=> for byte in sig {
-                packet_buf.push(byte);
-            },
+            Some(sig) => {
+                for byte in sig {
+                    packet_buf.push(byte);
+                }
+            }
             None => (),
         }
 
@@ -382,83 +374,105 @@ impl Packet {
     maybe should be verified manually so that
     an invalid packet doesn't make the program
         panic */
-    pub fn from_bytes(raw_packet: &mut Vec<u8>)->Self{
+    pub fn from_bytes(raw_packet: &mut Vec<u8>) -> Result<Packet, PacketError> {
         /*Should check len */
-        let id : [u8;4]= raw_packet.drain(0..=3).as_slice().try_into()
-                            .unwrap();
-        let packet_type= PacketType::from_u8(
-                        raw_packet.drain(0..1)
-                                            .as_slice()[0])
-                                            .unwrap();
-        let length ={
-                let length_bytes : [u8; 2] = raw_packet
-                                .drain(0..=1)
-                                .as_slice()
-                                .try_into()
-                                .unwrap();
-                let length = (length_bytes[0] as usize)>>8
-                                    + (length_bytes[1] as usize);
-                length
-            };
+        let mut len = raw_packet.len();
+        let mut copied = 0;
+        if len < 7 {
+            return Err(PacketError::InvalidFormatError);
+        }
+        len -= 7;
 
-        Self{
-            id: id,
-            packet_type: packet_type,
-            length: length.clone(),
-            body:{
-                let body : Vec<u8>= raw_packet.drain(0..length).collect();
-                body
-            },
-            signature: match raw_packet.is_empty() {
-                true=> None,
-                false => Some(
-                    raw_packet.drain(0..64).as_slice().try_into().unwrap()
-                ),
+        let mut id: [u8; 4] = [0; 4];
+        id.copy_from_slice(&raw_packet.as_slice()[copied..4]);
+        copied += 4;
+
+        let packet_type = PacketType::from_u8(raw_packet[copied])?;
+        copied += 1;
+
+        let length = {
+            let mut length_as_bytes: [u8; 2] = [0; 2];
+            length_as_bytes.copy_from_slice(&raw_packet.as_slice()[copied..(copied + 2)]);
+
+            (*length_as_bytes.get(0).unwrap() as usize)*(256) + (*length_as_bytes.get(1).unwrap() as usize)
+        };
+        copied += 2;
+
+        if len < length {
+            return Err(PacketError::InvalidFormatError);
+        }
+
+        let mut body: Vec<u8>;
+        if length == 0 {
+            body = vec![];
+        } else {
+            body = raw_packet.as_slice()[copied..(copied + length)].to_vec();
+        }
+        copied += length;
+        len -= length;
+
+        let mut signature: Option<[u8; 64]>;
+        if len == 0 {
+            signature = None;
+        } else if len < 64 {
+            return Err(PacketError::InvalidFormatError);
+        } else {
+            signature = {
+                let mut signature = [0; 64];
+                signature.copy_from_slice(&raw_packet.as_slice()[copied..copied + 64]);
+                Some(signature)
             }
         }
+
+        Ok(PacketBuilder::new()
+            .set_id(id)
+            .packet_type(packet_type)
+            .body(body)
+            .signature(signature)
+            .build()
+            .unwrap())
     }
 
-    pub fn raw_length(&self)-> usize{
+    pub fn raw_length(&self) -> usize {
         let add_64_if_signed = match self.signature {
-            Some(_)=> 64,
+            Some(_) => 64,
             None => 0,
         };
 
-        32+1+2+self.length+add_64_if_signed
+        32 + 1 + 2 + self.length + add_64_if_signed
     }
 
-    pub async fn send_to_addr(&self, sock: &UdpSocket,
-             addr: &SocketAddr)->Result<usize, PacketError>{
-
+    pub async fn send_to_addr(
+        &self,
+        sock: &UdpSocket,
+        addr: &SocketAddr,
+    ) -> Result<usize, PacketError> {
         sock.writable().await;
-        let res = sock.try_send_to(self
-                                .as_bytes()
-                                .as_slice(),
-                            addr.clone());
-
+        let res = sock.try_send_to(self.as_bytes().as_slice(), addr.clone());
 
         match res {
-            Ok(size)=> return Ok(size),
-            Err(e)=> return Err(PacketError::UnknownError),
+            Ok(size) => return Ok(size),
+            Err(e) => return Err(PacketError::UnknownError),
         }
     }
 
-    pub async fn recv_from(sock: &UdpSocket)
-                            ->Result<(SocketAddr ,Packet), PacketError>{
+    pub async fn recv_from(sock: &UdpSocket) -> Result<(SocketAddr, Packet), PacketError> {
         /*1095=4+1+2+(32+1024)+64 being the maximum packet size*/
-        let mut packet_buf: [u8; 1127] = [0;1127];
+        let mut packet_buf: [u8; 1128] = [0; 1128];
 
-        let (recvd_packet_size, peer_addr) =
-                        sock.recv_from(&mut packet_buf).await.unwrap();
+        let (recvd_packet_size, peer_addr) = sock.recv_from(&mut packet_buf).await.unwrap();
 
-        let response = 
-            (peer_addr,
-             Packet::from_bytes(&mut {
-                                    let mut packet_buf = packet_buf.to_vec();
-                                    packet_buf.truncate(recvd_packet_size);
-                                    packet_buf
-                                })
-            );
+        let response = (
+            peer_addr,
+            match Packet::from_bytes(&mut {
+                let mut packet_buf = packet_buf.to_vec();
+                packet_buf.truncate(recvd_packet_size);
+                packet_buf
+            }) {
+                Ok(packet) => packet,
+                Err(e) => return Err(e),
+            },
+        );
 
         Ok(response)
     }
@@ -480,15 +494,14 @@ impl Packet {
     //         Some(addr) => addr,
     //         None => return Err(PeerError::NoAddrsError),
     //     };
-            
+
     //     self.send_to_addr(sock, &addr).await
     // }
-
 
     // pub async fn send_hello(sock: &UdpSocket,
     //             peer_addr: &SocketAddr)->Result<[u8;4], PeerError>{
 
-    //     let hello_packet = PacketBuilder::hello_packet();            
+    //     let hello_packet = PacketBuilder::hello_packet();
 
     //     match hello_packet.send_to_addr(sock, peer_addr).await {
     //         Ok(_)=> Ok(hello_packet.get_id().clone()),
@@ -499,7 +512,7 @@ impl Packet {
     // pub async fn send_hello_reply(sock: &UdpSocket,
     //             peer_addr: &SocketAddr)->Result<(), PeerError>{
 
-    //     let hello_packet = PacketBuilder::hello_reply_packet();            
+    //     let hello_packet = PacketBuilder::hello_reply_packet();
 
     //     match hello_packet.send_to_addr(sock, peer_addr).await {
     //         Ok(_)=> Ok(()),
@@ -547,7 +560,7 @@ impl Packet {
     //         Ok(_)=> Ok(()),
     //         Err(e)=>Err(e),
     //     }
-        
+
     // }
 
     // pub async fn send_datum(sock: &UdpSocket, id: [u8;4],
@@ -574,7 +587,7 @@ impl Packet {
 
     /*Verify the hash of a Packet during p2p export/import */
     /*Should also take a hash  */
-    pub fn valid_hash(&self)->bool{
+    pub fn valid_hash(&self) -> bool {
         let body = self.get_body();
         let given_hash = &body.as_slice()[0..32];
 
@@ -590,5 +603,4 @@ impl Packet {
 
         calculated_hash == given_hash
     }
-
 }

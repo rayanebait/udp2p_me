@@ -1,42 +1,42 @@
 // pub mod peer_data;
-pub mod packet;
-pub mod congestion_handler;
-pub mod handle_packet;
-pub mod handle_action;
-pub mod sender_receiver;
 pub mod action;
-pub mod process;
+pub mod congestion_handler;
+pub mod handle_action;
+pub mod handle_packet;
+pub mod packet;
 pub mod peer;
+pub mod process;
+pub mod sender_receiver;
 
-pub mod import_export{
+pub mod import_export {
+    use prelude::*;
     use std::default;
     use std::future::IntoFuture;
-    use prelude::*;
 
     use std::sync::{Arc, Mutex};
 
     /*Utilities */
     use anyhow::{bail, Context, Result};
     use log::{debug, error, info, warn};
-    
+
     /*Async/net libraries */
     use futures::stream::FuturesUnordered;
-    use futures::{Future,StreamExt, select};
-    use tokio::net::UdpSocket;
+    use futures::{select, Future, StreamExt};
     use std::net::SocketAddr;
+    use tokio::net::UdpSocket;
     use tokio::test;
 
     use crate::congestion_handler::*;
     // use crate::peer_data::*;
-    use crate::packet::*;
     use crate::handle_packet::*;
-    
-    pub enum Error{
+    use crate::packet::*;
+
+    pub enum Error {
         Packet(PacketError),
         // Peer(PeerError),
     }
 
-    pub async fn timeout(dur: Duration)->Result<(SocketAddr ,Packet), PacketError>{
+    pub async fn timeout(dur: Duration) -> Result<(SocketAddr, Packet), PacketError> {
         tokio::time::sleep(Duration::from_secs(4)).await;
 
         Err(PacketError::UnknownError)
@@ -47,10 +47,10 @@ pub mod import_export{
     //                 active_peers: Arc<Mutex<ActivePeers>>)->Result<(), PeerError>{
 
     //     /*Launch async task*/
-    //     let handle = 
+    //     let handle =
     //         tokio::spawn(async move{
-    //         let Ok(packet_id) 
-    //             = Packet::send_hello(&sock, &peer_addr.clone()).await 
+    //         let Ok(packet_id)
+    //             = Packet::send_hello(&sock, &peer_addr.clone()).await
     //             else{
     //                 return Err(PeerError::UnknownError);
     //             };
@@ -63,12 +63,12 @@ pub mod import_export{
     //         arc_pending_guard.add_packet_id_raw(packet_id , &peer_addr.clone());
 
     //         /*Unlock the ids for other tasks */
-    //         /*It used to not work and the actions taken on 
+    //         /*It used to not work and the actions taken on
     //         a lock should be done in a sub {} scope, it should
     //         work now*/
     //         drop(arc_pending_guard);
-    //         /*Remark: add_packet_id is not async so that the mutex guard 
-    //         is not sent in an async where it could be awaited and create 
+    //         /*Remark: add_packet_id is not async so that the mutex guard
+    //         is not sent in an async where it could be awaited and create
     //         a deadlock */
 
     //         /*
@@ -83,14 +83,14 @@ pub mod import_export{
     //         loop{
     //             let mut wait_packet =
     //                     Packet::recv_from(&sock);
-                
+
     //             /*Push a listener on the socket*/
     //             waiting.push(wait_packet.await);
 
     //             /*Wait until either the timer finishes or a packet is received*/
     //             let packet_or_timeout =
     //                      waiting.iter().next().unwrap();
-                
+
     //             match packet_or_timeout {
     //                 Ok((sock_addr, packet)) =>{
     //                     if !packet.is(packet.get_packet_type()){
@@ -132,7 +132,7 @@ pub mod import_export{
 
     // }
 
-    // pub async 
+    // pub async
     // fn register(sock: Arc<UdpSocket>, root: Option<[u8;32]>,
     //          public_key: Option<[u8;64]>,
     //         pending: Arc<Mutex<PendingIds>>,
@@ -144,7 +144,6 @@ pub mod import_export{
     //     handshake(sock, server,
     //                     Arc::clone(&pending),
     //                     Arc::clone(&active_peers)).await;
-        
 
     //     Ok(())
     // }
@@ -156,22 +155,27 @@ mod tests {
 
     use super::*;
 
-    use nanorand::{Rng, BufferedRng, wyrand::WyRand};
+    use nanorand::{wyrand::WyRand, BufferedRng, Rng};
 
-    use import_export::*;
-    use tokio::{self, net::UdpSocket, runtime::Handle, runtime, time::{sleep,Duration}};
     use futures::join;
+    use import_export::*;
     use std::sync::{Arc, Mutex};
+    use tokio::{
+        self,
+        net::UdpSocket,
+        runtime,
+        runtime::Handle,
+        time::{sleep, Duration},
+    };
 
-    use crate::congestion_handler::Queue;
     use crate::congestion_handler::build_queues;
+    use crate::congestion_handler::Queue;
+    use crate::handle_action::*;
     use crate::handle_packet::handle_packet_task;
     use crate::packet::*;
     use crate::peer::peer::*;
-    use crate::sender_receiver::*;
-    use crate::handle_action::*;
     use crate::process::*;
-
+    use crate::sender_receiver::*;
 
     // #[test]
     // fn it_works() {
@@ -179,18 +183,18 @@ mod tests {
     //     assert_eq!(result, 4);
     // }
     #[tokio::test]
-    async fn packet_bytes_conversion(){
+    async fn packet_bytes_conversion() {
         let mut rng = BufferedRng::new(WyRand::new());
-        let mut rand_id : [u8;4]= [0;4];
+        let mut rand_id: [u8; 4] = [0; 4];
         rng.fill(&mut rand_id);
         drop(rng);
 
         let packet = PacketBuilder::new()
-                        .set_id(rand_id.clone())
-                        .body(b"what is this".to_vec())
-                        .packet_type(PacketType::Datum)
-                        .build()
-                        .unwrap();
+            .set_id(rand_id.clone())
+            .body(b"what is this".to_vec())
+            .packet_type(PacketType::Datum)
+            .build()
+            .unwrap();
 
         let hello_packet = PacketBuilder::noop_packet();
         let raw_hello_packet = hello_packet.as_bytes();
@@ -200,41 +204,41 @@ mod tests {
         println!("{:?}\n{:?}", raw_hello_packet, hello_packet);
     }
     #[tokio::test]
-    async fn handshake_with_pi(){
+    async fn handshake_with_pi() {
         let packet = PacketBuilder::noop_packet();
         let packet2 = PacketBuilder::new()
-                            .body(b"j'ai rotey :)".to_vec())
-                            .gen_id()
-                            .build()
-                            .unwrap();
-        let sock = UdpSocket::bind("172.20.10.7:0").await
-                    .unwrap();
-        packet.send_to_addr(&sock, &"176.169.27.221:9157".parse().unwrap()).await;
+            .body(b"j'ai rotey :)".to_vec())
+            .gen_id()
+            .build()
+            .unwrap();
+        let sock = UdpSocket::bind("172.20.10.7:0").await.unwrap();
+        packet
+            .send_to_addr(&sock, &"176.169.27.221:9157".parse().unwrap())
+            .await;
         sleep(Duration::from_millis(500));
-        packet2.send_to_addr(&sock, &"176.169.27.221:9157".parse().unwrap()).await;
+        packet2
+            .send_to_addr(&sock, &"176.169.27.221:9157".parse().unwrap())
+            .await;
         sleep(Duration::from_millis(500));
     }
 
-    #[tokio::test(flavor="multi_thread",worker_threads=5)]
-    async fn register_to_server(){
-        /*0 lets the os assign the port. The port is 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 5)]
+    async fn register_to_server() {
+        /*0 lets the os assign the port. The port is
         then accessible with the local_addr method */
-        let sock = Arc::new(
-            UdpSocket::bind("192.168.1.90:40000").await
-                                            .unwrap()
-                                        );
-        let (receive_queue,
-             send_queue,
-             action_queue,
-             process_queue,
-             pending_ids,
-             receive_queue_state,
-             action_queue_state,
-             send_queue_state,
-             process_queue_state,
-            )
-             = build_queues();
-             
+        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let (
+            receive_queue,
+            send_queue,
+            action_queue,
+            process_queue,
+            pending_ids,
+            receive_queue_state,
+            action_queue_state,
+            send_queue_state,
+            process_queue_state,
+        ) = build_queues();
+
         let active_peers = ActivePeers::build_mutex();
 
         let mut my_data = Peer::new();
@@ -249,106 +253,109 @@ mod tests {
             Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr2))
         }
         /*Do a launch tasks func ? */
-        let f1 = receiver(Arc::clone(&sock),
-                 Arc::clone(&receive_queue),
-                 Arc::clone(&receive_queue_state));
-                 
-                 
+        let f1 = receiver(
+            Arc::clone(&sock),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+        );
+
         let f2 = handle_packet_task(
             Arc::clone(&pending_ids),
-                Arc::clone(&receive_queue),
-                Arc::clone(&receive_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state));
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
         let f3 = handle_action_task(
-                Arc::clone(&send_queue),
-                Arc::clone(&send_queue_state),
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state),
-            );
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
         let f4 = process_task(
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state),
-                Arc::clone(&active_peers),
-                Arc::clone(&my_data)
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&active_peers),
+            Arc::clone(&my_data),
+        );
 
-            );
-                          
-        let f5 = sender(Arc::clone(&sock),
-                Arc::clone(&send_queue),
-                Arc::clone(&send_queue_state),
-                Arc::clone(&pending_ids));
+        let f5 = sender(
+            Arc::clone(&sock),
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&pending_ids),
+        );
 
         // let metrics = Handle::current().metrics();
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
 
-        join!(f1,f2,f3,f4,f5);
+        join!(f1, f2, f3, f4, f5);
     }
 
-    #[tokio::test(flavor="multi_thread", worker_threads=10)]
-    async fn register_to_server2(){
-        /*0 lets the os assign the port. The port is 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+    async fn register_to_server2() {
+        /*0 lets the os assign the port. The port is
         then accessible with the local_addr method */
-        let sock = Arc::new(
-            UdpSocket::bind("192.168.1.90:40000").await
-                                            .unwrap()
-                                        );
-        let (receive_queue,
-             send_queue,
-             action_queue,
-             process_queue,
-             pending_ids,
-             receive_queue_state,
-             action_queue_state,
-             send_queue_state,
-             process_queue_state,
-            )
-             = build_queues();
-             
+        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let (
+            receive_queue,
+            send_queue,
+            action_queue,
+            process_queue,
+            pending_ids,
+            receive_queue_state,
+            action_queue_state,
+            send_queue_state,
+            process_queue_state,
+        ) = build_queues();
+
         let active_peers = ActivePeers::build_mutex();
 
         let mut my_data = Peer::new();
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
 
-        let f1 = receiver(Arc::clone(&sock),
-                 Arc::clone(&receive_queue),
-                 Arc::clone(&receive_queue_state));
-                 
-                 
+        let f1 = receiver(
+            Arc::clone(&sock),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+        );
+
         let f2 = handle_packet_task(
             Arc::clone(&pending_ids),
-                Arc::clone(&receive_queue),
-                Arc::clone(&receive_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state));
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
         let f3 = handle_action_task(
-                Arc::clone(&send_queue),
-                Arc::clone(&send_queue_state),
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state),
-            );
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
         let f4 = process_task(
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_state),
-                Arc::clone(&active_peers),
-                Arc::clone(&my_data)
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&active_peers),
+            Arc::clone(&my_data),
+        );
 
-            );
-                          
-        let f5 = sender(Arc::clone(&sock),
-                Arc::clone(&send_queue),
-                Arc::clone(&send_queue_state),
-                Arc::clone(&pending_ids));
+        let f5 = sender(
+            Arc::clone(&sock),
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&pending_ids),
+        );
 
         // let metrics = Handle::current().metrics();
         // let n = metrics.active_tasks_count();
@@ -358,10 +365,9 @@ mod tests {
             Arc::clone(&process_queue_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
-            Arc::clone(&my_data));
+            Arc::clone(&my_data),
+        );
 
-        join!(f1,f2,f3,f4,f5, reg);
-
+        join!(f1, f2, f3, f4, f5, reg);
     }
-
 }
