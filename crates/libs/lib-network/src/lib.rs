@@ -7,6 +7,10 @@ pub mod packet;
 pub mod peer;
 pub mod process;
 pub mod sender_receiver;
+<<<<<<< HEAD
+=======
+pub mod store;
+>>>>>>> c57cd98b26379b3ee18d4aa41e2479d3e8920aee
 
 pub mod import_export {
     use prelude::*;
