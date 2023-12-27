@@ -38,10 +38,10 @@ fn main() {
         Some(Commands::FetchPeers { host }) => {
             println!("{:?}", host); // if host is not provided in correct form, the app will tell the user
         }
-        Some(Commands::)
         None => {
             println!("No subcommand");
-        }
+        },
+        _=>(),
     }
 }
 

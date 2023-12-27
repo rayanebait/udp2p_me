@@ -1,6 +1,9 @@
 use core::panic;
+use std::collections::HashMap;
 use std::error;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex,RwLock};
+use std::time::Duration;
 
 use crate::{congestion_handler::*, action};
 use crate::action::Action;
@@ -189,53 +192,115 @@ pub fn process_action(action : Action,
                          )
     {
         tokio::spawn(async move {
-            loop {
                 /*Wait notify all from receive task */
-                process_queue_state.wait();
-                let front = match
-                     Queue::read_lock_and_peek(
-                        Arc::clone(&peek_process_queue)
-                        ){
-                            Some(front) => front,
-                            None => continue,
-                        };
-                match front{
-                    Action::ProcessHelloReply(
-                        extensions,
-                        name ,
-                        sock_addr )=>
-                            Queue::lock_and_push(
-                                Arc::clone(&action_queue),
-                                Action::SendRoot(my_data.get_root_hash(), sock_addr)),
-                    _=>continue,
-                }
 
-            }
         }).await;
     }
 
-    pub async fn peek_until_action(
+
+    pub async fn peek_until_hello_from(
                             peek_process_queue: Arc<RwLock<Queue<Action>>>,
                             process_queue_state: Arc<QueueState>,
                             action_queue: Arc<Mutex<Queue<Action>>>,
                             action_queue_state: Arc<QueueState>,
-                            action: Action
+                            sock_addr: SocketAddr
                         )-> Result<Action, tokio::task::JoinError>
     {
         tokio::spawn(async move {
             loop {
                 /*Wait notify all from receive task */
-                process_queue_state.wait();
                 let front = match
                      Queue::read_lock_and_peek(
                         Arc::clone(&peek_process_queue)
                         ){
                             Some(front) => front,
-                            None => continue,
+                            None => {
+                                process_queue_state.wait();
+                                continue
+                            }
                         };
-                match front{
-                    action => break action,
-                    _=>continue,
+                match front {
+                    Action::ProcessHelloReply(..,
+                                 addr)=> 
+                                    if addr == sock_addr{
+                                        break front
+                                    } else {
+                                        continue
+                                    },
+                    _ => continue,
+                }
+            }
+        }).await
+    }
+
+    pub async fn peek_until_public_key_from(
+                            peek_process_queue: Arc<RwLock<Queue<Action>>>,
+                            process_queue_state: Arc<QueueState>,
+                            action_queue: Arc<Mutex<Queue<Action>>>,
+                            action_queue_state: Arc<QueueState>,
+                            sock_addr: SocketAddr
+                        )-> Result<Result<Action, PeerError>, tokio::task::JoinError>
+    {
+        tokio::spawn(async move {
+            let timeout = tokio::time::sleep(Duration::from_secs(3));
+            loop {
+                if timeout.is_elapsed() {
+                    break Err(PeerError::ResponseTimeout)
+                }
+                /*Wait notify all from receive task */
+                let front = match
+                     Queue::read_lock_and_peek(
+                        Arc::clone(&peek_process_queue)
+                        ){
+                            Some(front) => front,
+                            None => {
+                                process_queue_state.wait();
+                                continue
+                            }
+                        };
+                match front {
+                    Action::ProcessHelloReply(..,
+                                 addr)=> 
+                                    if addr == sock_addr{
+                                        break Ok(front)
+                                    } else {
+                                        continue
+                                    },
+                    _ => continue,
+                }
+            }
+        }).await
+    }
+    pub async fn peek_until_root_reply_from(
+                            peek_process_queue: Arc<RwLock<Queue<Action>>>,
+                            process_queue_state: Arc<QueueState>,
+                            action_queue: Arc<Mutex<Queue<Action>>>,
+                            action_queue_state: Arc<QueueState>,
+                            sock_addr: SocketAddr
+                        )-> Result<Result<Action, PeerError>, tokio::task::JoinError>
+    {
+        tokio::spawn(async move {
+            loop {
+                /*Wait notify all from receive task */
+                let front = match
+                     Queue::read_lock_and_peek(
+                        Arc::clone(&peek_process_queue)
+                        ){
+                            Some(front) => front,
+                            None => {
+                                process_queue_state.wait();
+                                continue
+                            }
+                        };
+                match front {
+                    Action::ProcessHelloReply(..,
+                                 addr)=> 
+                                    if addr == sock_addr{
+                                        break Ok(front)
+                                    } else {
+                                        continue
+                                    },
+                    _ => continue,
                 }
             }
         }).await
