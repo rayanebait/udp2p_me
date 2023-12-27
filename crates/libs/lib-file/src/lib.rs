@@ -4,7 +4,12 @@ pub mod mk_fs {
     use anyhow::{bail, Context, Result};
     use log::{debug, error, info, warn};
     use sha2::{Digest, Sha256};
-    use std::{collections::HashMap, fmt, fs, path::PathBuf};
+    use std::{
+        collections::HashMap,
+        fmt,
+        fs::{self, File},
+        path::PathBuf,
+    };
 
     /// Merkle tree node type enum.
     ///
@@ -14,9 +19,9 @@ pub mod mk_fs {
     /// - `bigfile` represent files bigger than the chunk size, they don't hold the data but pass it to their children
     #[derive(Debug)]
     pub enum MktFsNodeType {
-        DIRECTORY,
-        CHUNK,
-        BIGFILE,
+        DIRECTORY { path: PathBuf },
+        CHUNK { file: File, offset: u64 },
+        BIGFILE { path: PathBuf },
     }
 
     /// Merkle tree node representing the file system.
@@ -84,6 +89,7 @@ pub mod mk_fs {
             data: impl Into<Vec<u8>>,
             chunk_size: usize,
             max_children: usize,
+            offset: Option<u64>,
         ) -> Result<MktFsNode> {
             // Shadow the variable to cast it in the correct type and own it.
             let data = data.into();
@@ -99,10 +105,15 @@ pub mod mk_fs {
 
             // If the data is small enough to fit in a single chunk
             // return the chunk directly
+            let mut file = File::open(path)?;
+
             if data.len() <= chunk_size {
                 return (Ok(MktFsNode {
                     path: path.clone(),
-                    ntype: MktFsNodeType::CHUNK,
+                    ntype: MktFsNodeType::CHUNK {
+                        file,
+                        offset: offset.unwrap_or_default(),
+                    },
                     children: None,
                     hash: hash_bytes_prefix(&data, 0),
                     // data: Some(data),
@@ -131,13 +142,23 @@ pub mod mk_fs {
                 }
 
                 // Generate children nodes recursively, excluding the nodes where the construction fails
-                // TODO : Warn the user of such failures
+                let layer_size = chunk_size * max_children.pow(n_layers);
                 let children = data
-                    .chunks(chunk_size * max_children.pow(n_layers))
-                    .filter_map(|d| {
-                        match MktFsNode::try_from_bytes(path, d, chunk_size, max_children) {
+                    .chunks(layer_size)
+                    .enumerate()
+                    .filter_map(|(i, d)| {
+                        match MktFsNode::try_from_bytes(
+                            path,
+                            d,
+                            chunk_size,
+                            max_children,
+                            Some((layer_size * i) as u64 + offset.unwrap_or_default()),
+                        ) {
                             Ok(n) => Some(n),
-                            Err(e) => None,
+                            Err(e) => {
+                                log::warn!("Failed to build a MktFsNode for {:?}.", &path);
+                                None
+                            }
                         }
                     })
                     .collect::<Vec<MktFsNode>>();
@@ -156,7 +177,9 @@ pub mod mk_fs {
                 // Generate root node with the computed children and hash
                 return (Ok(MktFsNode {
                     path: path.into(),
-                    ntype: MktFsNodeType::BIGFILE,
+                    ntype: MktFsNodeType::BIGFILE {
+                        path: path.to_path_buf(),
+                    },
                     children: Some(children),
                     hash: hash,
                     // data: None,
@@ -183,7 +206,7 @@ pub mod mk_fs {
                 &path.to_string_lossy()
             )
             })?;
-            return MktFsNode::try_from_bytes(path, content, chunk_size, max_children);
+            return MktFsNode::try_from_bytes(path, content, chunk_size, max_children, None);
         }
 
         /// Create a `MktFsNode` from a directory.
@@ -242,7 +265,9 @@ pub mod mk_fs {
             // Generate root node
             return (Ok(MktFsNode {
                 path: path.clone(),
-                ntype: MktFsNodeType::DIRECTORY,
+                ntype: MktFsNodeType::DIRECTORY {
+                    path: path.to_path_buf(),
+                },
                 children: Some(children),
                 hash: hash,
                 // data: None,
@@ -266,6 +291,36 @@ pub mod mk_fs {
                 }
             }
             return hmap;
+        }
+
+        /// Create a list of all contained `MkFsNode` of type `MkFsNodeType::CHUNK`.
+        ///
+        /// The order of the chunks is preserved so that a bigfile can be read in order by reading from the array.
+        pub fn to_chunk_list(&self) -> Vec<&MktFsNode> {
+            let mut chunks = Vec::<&MktFsNode>::new();
+
+            match self.ntype {
+                MktFsNodeType::CHUNK { .. } => chunks.push(&self),
+                MktFsNodeType::BIGFILE { .. } => match &self.children {
+                    Some(nodes) => {
+                        nodes
+                            .iter()
+                            .map(|c| chunks.append(&mut c.to_chunk_list()))
+                            .collect::<Vec<_>>();
+                    }
+                    None => (),
+                },
+                MktFsNodeType::DIRECTORY { .. } => match &self.children {
+                    Some(nodes) => {
+                        nodes
+                            .iter()
+                            .map(|c| chunks.append(&mut c.to_chunk_list()))
+                            .collect::<Vec<_>>();
+                    }
+                    None => (),
+                },
+            }
+            return (chunks);
         }
     }
 
@@ -302,7 +357,7 @@ mod tests {
 
     use crate::mk_fs::*;
     use hex;
-    use std::path::PathBuf;
+    use std::{io::Read, os::unix::fs::FileExt, path::PathBuf, str};
 
     #[test]
     fn lib_file_hash_bytes() {
@@ -327,8 +382,8 @@ mod tests {
     #[test]
     fn lib_file_node_from_small_chunk() {
         let data = b"abc";
-        let path = PathBuf::from("/root");
-        let node = MktFsNode::try_from_bytes(&path, data, 4, 2).unwrap();
+        let path = PathBuf::from("/tmp/abc/test.txt");
+        let node = MktFsNode::try_from_bytes(&path, data, 4, 2, None).unwrap();
         assert_eq!(
             node.hash,
             [
@@ -345,8 +400,8 @@ mod tests {
         //           |               | |
         //           |                 |
         let data = b"abcdefghijklmabcde";
-        let path = PathBuf::from("/root");
-        let node = MktFsNode::try_from_bytes(&path, data, 4, 2).unwrap();
+        let path = PathBuf::from("/tmp/abc/test.txt");
+        let node = MktFsNode::try_from_bytes(&path, data, 4, 2, None).unwrap();
         assert_eq!(
             node.hash,
             [
@@ -354,6 +409,26 @@ mod tests {
                 98, 251, 142, 55, 111, 159, 195, 146, 118, 194, 231, 240, 11, 170
             ]
         );
+    }
+
+    #[test]
+    fn lib_file_node_to_chunk_list() {
+        let path = PathBuf::from("./src");
+        const CHUNK_SIZE: usize = 1024;
+        let node = MktFsNode::try_from_path(&path, CHUNK_SIZE, 2).unwrap();
+
+        let chunk_list = node.to_chunk_list();
+        println!("Contents :");
+        for chunk in chunk_list.into_iter() {
+            match &chunk.ntype {
+                MktFsNodeType::CHUNK { file, offset } => {
+                    let mut buf = [0u8; CHUNK_SIZE];
+                    file.read_at(&mut buf, *offset).unwrap();
+                    print!("{}", str::from_utf8(&buf).unwrap());
+                }
+                _ => (),
+            }
+        }
     }
 
     #[test]
@@ -383,6 +458,25 @@ mod tests {
         match result {
             Some(r) => println!("{:?}", r),
             None => println!("Node not found for hash {:?}", hash),
+        }
+    }
+
+    #[test]
+    fn lib_file_read_from_descriptor() {
+        let path = PathBuf::from("/tmp/abc/test.txt");
+        let node = MktFsNode::try_from_file(&path, 1024, 32).unwrap();
+        match node.ntype {
+            MktFsNodeType::DIRECTORY { path } => {
+                println!("Directory : {path:#?}");
+            }
+            MktFsNodeType::BIGFILE { path } => {
+                println!("BigFile : {path:#?}");
+            }
+            MktFsNodeType::CHUNK { mut file, offset } => {
+                let mut content = Vec::<u8>::new();
+                file.read_to_end(&mut content);
+                println!("Content : {}", str::from_utf8(content.as_slice()).unwrap());
+            }
         }
     }
 }
