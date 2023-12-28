@@ -10,6 +10,7 @@ workspace = true
 anyhow = "1.0.75"
 log = "0.4.20"
 lib-web = {path = "../../libs/lib-web"}
+lib-file = {path = "../../libs/lib-file"}
 tokio = { version = "1.35.0", features = ["net", "macros", "rt", "rt-multi-thread"] }
 nanorand = "0.7.0"
 prelude = "0.2.1"

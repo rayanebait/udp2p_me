@@ -152,7 +152,7 @@ pub mod import_export {
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
+    use std::{net::SocketAddr, path::PathBuf};
 
     use super::*;
 
@@ -178,6 +178,7 @@ mod tests {
     use crate::process::*;
     use crate::sender_receiver::*;
 
+    use lib_file::mk_fs::{self, MktFsNode};
     // #[test]
     // fn it_works() {
     //     let result = add(2, 2);
@@ -275,14 +276,15 @@ mod tests {
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
         );
-        let f4 = process_task(
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&active_peers),
-            Arc::clone(&my_data),
-        );
+        // let f4 = process_task(
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_state),
+        //     Arc::clone(&active_peers),
+        //     Arc::clone(&my_data),
+        //     Arc::clone()
+        // );
 
         let f5 = sender(
             Arc::clone(&sock),
@@ -295,7 +297,9 @@ mod tests {
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
 
-        join!(f1, f2, f3, f4, f5);
+        join!(f1, f2, f3,
+            //  f4,
+              f5);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
@@ -303,7 +307,8 @@ mod tests {
         /*0 lets the os assign the port. The port is
         then accessible with the local_addr method */
         // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
-        let sock = Arc::new(UdpSocket::bind("172.20.10.7:0").await.unwrap());
+
+        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let (
             receive_queue,
             send_queue,
@@ -350,6 +355,97 @@ mod tests {
             Arc::clone(&process_queue_state),
             Arc::clone(&active_peers),
             Arc::clone(&my_data),
+        );
+
+        let sending = sender(
+            Arc::clone(&sock),
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&pending_ids),
+        );
+
+        // let metrics = Handle::current().metrics();
+        // let n = metrics.active_tasks_count();
+        // println!("Runtime has {} active tasks", n);
+        let registering = register(
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&my_data),
+        );
+
+        join!(
+            receiving,
+            handling,
+            processing_one,
+            processing_two,
+            sending,
+            registering
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+    async fn register_and_export() {
+        // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+
+        let tree = MktFsNode::try_from_path(
+            &PathBuf::from("/home/splash/files/notes_m2/protocoles_reseaux/tp/Projet/to_export/"),
+            1024,
+            100,
+        )
+        .expect("unexisting path");
+
+        let map = Arc::new(tree.to_hashmap());
+
+        let (
+            receive_queue,
+            send_queue,
+            action_queue,
+            process_queue,
+            pending_ids,
+            receive_queue_state,
+            action_queue_state,
+            send_queue_state,
+            process_queue_state,
+        ) = build_queues();
+
+        let active_peers = ActivePeers::build_mutex();
+
+        let mut my_data = Peer::new();
+        my_data.set_name(vec![97, 110, 105, 116]);
+        let my_data = Arc::new(my_data.clone());
+
+        let receiving = receiver(
+            Arc::clone(&sock),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+        );
+
+        let handling = handle_packet_task(
+            Arc::clone(&pending_ids),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
+        let processing_two = handle_action_task(
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
+        let processing_one = process_task(
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&active_peers),
+            Arc::clone(&my_data),
+            // Arc::clone(&map)
         );
 
         let sending = sender(

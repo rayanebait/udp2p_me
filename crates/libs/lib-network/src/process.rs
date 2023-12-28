@@ -17,6 +17,8 @@ use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
 use crate::{action, congestion_handler::*};
 
+use lib_file::mk_fs::{self, MktFsNode};
+
 /*Chaque sous task du CLI lit passivement la process queue
 et push des paquets dans l'action queue en conséquence ?*/
 pub async fn process_task(
@@ -26,6 +28,7 @@ pub async fn process_task(
     process_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: Arc<Peer>,
+    // to_export: Arc<HashMap<[u8;32], &MktFsNode>>,
     //tree: ?
     //For each peer build a physical tree and fill it ?
     //Option<mk_fs>, when receiving a getdatum, check if None or some
@@ -46,6 +49,7 @@ pub async fn process_task(
                         Arc::clone(&action_queue_state),
                         Arc::clone(&active_peers),
                         Arc::clone(&my_data),
+                        // Arc::clone(&to_export)
                     );
                     /*return the action required */
                 }
@@ -72,7 +76,7 @@ pub fn process_action(
     action_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: Arc<Peer>, //Pour store public key et root ->
-                        //hashmap: sockaddr vers peer
+    // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
                         //peer.set_public_key...
                         //peer.set_root..
                         //active_peers: Arc<ActivePeers>
@@ -174,6 +178,7 @@ pub fn process_action(
             return;
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
+
             return;
         }
         Action::ProcessHelloReply(extensions, name, sock_addr) => {
@@ -306,6 +311,7 @@ pub async fn peek_until_hello_reply_from(
         let timeout_handle = tokio::spawn( async move {
             let timeout = sleep(Duration::from_secs(3)).await;
             if abort_task_handle.is_finished() {
+                /*Never happens */
                 return Err::<Action, PeerError>(PeerError::ResponseTimeout);
             } else {
                 abort_task_handle.abort();
@@ -335,3 +341,4 @@ pub async fn peek_until_hello_reply_from(
             }
         };
 }
+
