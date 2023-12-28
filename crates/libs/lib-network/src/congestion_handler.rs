@@ -4,7 +4,6 @@ use std::net::{UdpSocket, SocketAddr};
 use std::sync::{Mutex, Arc, PoisonError, Condvar, MutexGuard, RwLock};
 use std::collections::VecDeque;
 
-use lib_web::discovery::Peer;
 // use crate::{peer_data::*, packet};
 use crate::packet::{*, self};
 use crate::action::*;
