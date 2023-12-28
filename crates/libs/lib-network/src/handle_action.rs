@@ -28,7 +28,6 @@ pub async fn handle_action_task(send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)
             match Queue::lock_and_pop(Arc::clone(&action_queue)){
                 Some(action)=> {
                     /*action queue is not empty get an action and handle it*/
-                    println!("handle action");
                     handle_action(action,
                         Arc::clone(&send_queue),
                     Arc::clone(&send_queue_state),

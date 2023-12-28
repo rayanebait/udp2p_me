@@ -5,8 +5,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use futures::future::select;
 use futures::stream::FuturesUnordered;
+use futures::Future;
+use tokio::join;
+use tokio::select;
+use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{sleep, Sleep};
 
 use crate::action::Action;
@@ -81,7 +84,6 @@ pub fn process_action(
     match action {
         Action::ProcessNoOp(sock_addr) => {
             /*DONE */
-            println!("Received NoOp packet from {}\n", sock_addr);
             return;
         }
         Action::ProcessHello(id, extensions, name, sock_addr) => {
@@ -207,7 +209,10 @@ pub fn process_action(
     }
 }
 
-/*Queue to peek the main queues */
+/*Sends Hello then peeks the process queue to check for a helloreply, if no 
+helloreply in 3 seconds, sends hello again, repeats 3 times.
+
+ */
 pub async fn register(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
@@ -217,7 +222,7 @@ pub async fn register(
 ) {
     let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
 
-    for attempt in 0..5 {
+    for attempt in 0..10 {
         Queue::lock_and_push(
             Arc::clone(&action_queue),
             Action::SendHello(None, my_data.get_name().unwrap(), server_sock_addr),
@@ -234,34 +239,35 @@ pub async fn register(
         )
         .await
         {
-            Ok(_) =>{
-                keep_alive_to_peer(Arc::clone(&action_queue),
+            Ok(_) => {
+                keep_alive_to_peer(
+                    Arc::clone(&action_queue),
                     Arc::clone(&action_queue_state),
-                    *&server_sock_addr);
-                break
-            },
+                    *&server_sock_addr,
+                );
+                break;
+            }
             Err(_) => continue,
         }
     }
+    println!("here")
 }
 
-pub async fn keep_alive_to_peer(
+pub fn keep_alive_to_peer(
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     sock_addr: SocketAddr,
 ) {
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_secs(5)).await;
+            std::thread::sleep(Duration::from_secs(5));
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHello(
-                    None,
-                    vec![110, 105, 115, 116],
-                    sock_addr));
+                Action::SendHello(None, vec![97, 105, 115, 116], sock_addr),
+            );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
         }
-    }).await;
+    });
 }
 
 pub async fn peek_until_hello_reply_from(
@@ -273,28 +279,59 @@ pub async fn peek_until_hello_reply_from(
 ) -> Result<Action, PeerError> {
     /*Curr not working because stuck in waiting process queue
     try with two tasks or two futures */
-    loop {
-        let timeout = sleep(Duration::from_secs(1));
-        if timeout.is_elapsed() {
-            break Err(PeerError::ResponseTimeout);
-        }
-        /*Wait notify all from receive task */
-        let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
-            Some(front) => front,
-            None => {
-                process_queue_state.wait();
-                continue;
-            }
-        };
-        match front {
-            Action::ProcessHelloReply(.., addr) => {
-                if addr == sock_addr {
-                    break Ok(front);
-                } else {
-                    continue;
+        let task_handle = tokio::spawn(async move{
+            loop {
+                /*Wait notify all from receive task */
+                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                    Some(front) => front,
+                    None => {
+                        process_queue_state.wait();
+                        continue;
+                    }
+                };
+                match front {
+                    Action::ProcessHelloReply(.., addr) => {
+                        if addr == sock_addr {
+                            break Ok::<Action, PeerError>(front);
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
                 }
             }
-            _ => continue,
-        }
-    }
+        });
+        let abort_task_handle = task_handle.abort_handle();
+
+        let timeout_handle = tokio::spawn( async move {
+            let timeout = sleep(Duration::from_secs(3)).await;
+            if abort_task_handle.is_finished() {
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            } else {
+                abort_task_handle.abort();
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            }
+        });
+        /* Return when either response time out or received a packet
+        corresponding */
+        select! {
+            timed_out = timeout_handle => {
+                match timed_out {
+                    Ok(result)=> match result {
+                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+            action = task_handle => {
+                match action {
+                    Ok(result)=> match result {
+                        Ok(action)=> return Ok(action),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+        };
 }

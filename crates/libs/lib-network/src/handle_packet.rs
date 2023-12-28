@@ -49,7 +49,6 @@ pub async fn handle_packet_task(
             match action_or_error {
                 Ok(action) => {
                     /* we have an action, push it to the queue*/
-                    println!("push action (handle packet)");
                     Queue::write_lock_and_push(Arc::clone(&process_queue), action);
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
                     continue;

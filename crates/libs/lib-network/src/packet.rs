@@ -394,7 +394,8 @@ impl Packet {
             let mut length_as_bytes: [u8; 2] = [0; 2];
             length_as_bytes.copy_from_slice(&raw_packet.as_slice()[copied..(copied + 2)]);
 
-            (*length_as_bytes.get(0).unwrap() as usize)*(256) + (*length_as_bytes.get(1).unwrap() as usize)
+            (*length_as_bytes.get(0).unwrap() as usize) * (256)
+                + (*length_as_bytes.get(1).unwrap() as usize)
         };
         copied += 2;
 

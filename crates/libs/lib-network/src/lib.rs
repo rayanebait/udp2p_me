@@ -7,10 +7,7 @@ pub mod packet;
 pub mod peer;
 pub mod process;
 pub mod sender_receiver;
-<<<<<<< HEAD
-=======
 pub mod store;
->>>>>>> c57cd98b26379b3ee18d4aa41e2479d3e8920aee
 
 pub mod import_export {
     use prelude::*;
@@ -305,7 +302,8 @@ mod tests {
     async fn register_to_server2() {
         /*0 lets the os assign the port. The port is
         then accessible with the local_addr method */
-        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let sock = Arc::new(UdpSocket::bind("172.20.10.7:0").await.unwrap());
         let (
             receive_queue,
             send_queue,
@@ -324,20 +322,20 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
 
-        let f1 = receiver(
+        let receiving = receiver(
             Arc::clone(&sock),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
         );
 
-        let f2 = handle_packet_task(
+        let handling = handle_packet_task(
             Arc::clone(&pending_ids),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
         );
-        let f3 = handle_action_task(
+        let processing_two = handle_action_task(
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&action_queue),
@@ -345,7 +343,7 @@ mod tests {
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
         );
-        let f4 = process_task(
+        let processing_one = process_task(
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&process_queue),
@@ -354,7 +352,7 @@ mod tests {
             Arc::clone(&my_data),
         );
 
-        let f5 = sender(
+        let sending = sender(
             Arc::clone(&sock),
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
@@ -364,7 +362,7 @@ mod tests {
         // let metrics = Handle::current().metrics();
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
-        let reg = register(
+        let registering = register(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
             Arc::clone(&action_queue),
@@ -372,6 +370,13 @@ mod tests {
             Arc::clone(&my_data),
         );
 
-        join!(f1, f2, f3, f4, f5, reg);
+        join!(
+            receiving,
+            handling,
+            processing_one,
+            processing_two,
+            sending,
+            registering
+        );
     }
 }
