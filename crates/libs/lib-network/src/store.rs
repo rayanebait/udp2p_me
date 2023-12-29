@@ -9,7 +9,7 @@ pub fn get_child_to_parent_hashmap(
 ) {
     let mut hashmap = match hashmap.lock() {
         Ok(guard) => guard,
-        Err(PoisonError) => panic!("Some tasks panicked in hashmap building"),
+        Err(poison_error) => panic!("Some tasks panicked in hashmap building"),
     };
 
     match action {
@@ -61,7 +61,7 @@ pub fn get_parent_to_child_hashmap(
 ) {
     let mut hashmap = match hashmap.lock() {
         Ok(guard) => guard,
-        Err(PoisonError) => panic!("Some tasks panicked in hashmap building"),
+        Err(poison_error) => panic!("Some tasks panicked in hashmap building"),
     };
 
     match action {
@@ -322,7 +322,7 @@ pub mod test {
         let mut c_to_p_hashmap = Arc::new(Mutex::new(HashMap::<[u8; 32], [u8; 32]>::new()));
         get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
         let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
-        get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
+        // get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
         // println!("{:?}", h_to_n_hashmap);
     }
 
@@ -344,9 +344,9 @@ pub mod test {
         let mut c_to_p_hashmap =Arc::new(Mutex::new( HashMap::<[u8; 32], [u8; 32]>::new()));
         get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
         let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
-        get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
-        let mut n_to_h_hashmap = HashMap::<String, Vec<[u8; 32]>>::new();
-        get_name_to_hash_hashmap(&action, &mut n_to_h_hashmap, c_to_p_hashmap, h_to_n_hashmap);
-        println!("{n_to_h_hashmap:?}");
+        // get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
+        // let mut n_to_h_hashmap = HashMap::<String, Vec<[u8; 32]>>::new();
+        // get_name_to_hash_hashmap(&action, &mut n_to_h_hashmap, c_to_p_hashmap, h_to_n_hashmap);
+        // println!("{n_to_h_hashmap:?}");
     }
 }

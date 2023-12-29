@@ -345,6 +345,7 @@ pub async fn peek_until_hello_reply_from(
     };
 }
 
+
 pub async fn fetch_subtree_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
@@ -355,6 +356,8 @@ pub async fn fetch_subtree_from(
     sock_addr: SocketAddr,
     child_to_parent_hashmap: Arc<Mutex<HashMap<[u8; 32], Vec<[u8; 32]>>>>,
     parent_to_child_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
+    name_to_hash_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
+    hash_to_name_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
 ){
     tokio::spawn(async move {
         loop {

@@ -200,7 +200,7 @@ fn handle_request_packet(
             },
             socket_addr,
         )),
-        PacketType::NatTraversal => todo!(),
+        PacketType::NatTraversal => Ok(Action::SendNoOp(socket_addr)),
         /*Invalid packet, should send error*/
         _ => Err(HandlingError::InvalidPacketError),
     }
