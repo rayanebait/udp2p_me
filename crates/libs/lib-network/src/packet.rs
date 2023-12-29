@@ -88,6 +88,21 @@ pub struct Packet {
     signature: Option<[u8; 64]>,
 }
 
+impl Default for Packet {
+    fn default() -> Self {
+        let mut rng = BufferedRng::new(WyRand::new());
+        let mut id = [0u8; 4];
+        rng.fill(&mut id);
+        return Packet {
+            id,
+            packet_type: PacketType::NoOp,
+            length: 0,
+            body: Vec::new(),
+            signature: None,
+        };
+    }
+}
+
 #[derive(Default)]
 pub struct PacketBuilder {
     id: Option<[u8; 4]>,
