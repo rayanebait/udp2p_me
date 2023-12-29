@@ -132,6 +132,18 @@ impl<T: Clone> Queue<T>{
         
         queue_guard.push_back(data);
     }
+    pub fn lock_and_push_mul(queue: Arc<Mutex<Queue<T>>>,
+                    data_vec: Vec<T>){
+        let mut queue_guard = 
+            match queue.lock(){
+                Ok(queue_gard)=>
+                             queue_gard,
+                Err(poison_error)=>
+                             panic!("Mutex is poisoned, some thread panicked"),
+            };
+        
+        queue_guard.append_back(data_vec);
+}
 
     pub fn write_lock_and_pop(queue: Arc<RwLock<Queue<T>>>)->Option<T>{
         let mut queue_guard = 
@@ -157,6 +169,9 @@ impl<T: Clone> Queue<T>{
     }
     pub fn push_back(&mut self, data: T){
         self.data.push_back(data);
+    }
+    pub fn append_back(&mut self, data_vec: impl Into<VecDeque<T>>){
+        self.data.extend(data_vec.into());
     }
 
     pub fn pop_front(&mut self)->Option<T>{

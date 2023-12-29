@@ -15,6 +15,7 @@ use tokio::time::{sleep, Sleep};
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
+use crate::store::get_fs_tree_hashmap;
 use crate::{action, congestion_handler::*};
 
 use lib_file::mk_fs::{self, MktFsNode};
@@ -76,7 +77,7 @@ pub fn process_action(
     action_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: Arc<Peer>, //Pour store public key et root ->
-    // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
+                        // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
                         //peer.set_public_key...
                         //peer.set_root..
                         //active_peers: Arc<ActivePeers>
@@ -178,7 +179,6 @@ pub fn process_action(
             return;
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
-
             return;
         }
         Action::ProcessHelloReply(extensions, name, sock_addr) => {
@@ -214,7 +214,7 @@ pub fn process_action(
     }
 }
 
-/*Sends Hello then peeks the process queue to check for a helloreply, if no 
+/*Sends Hello then peeks the process queue to check for a helloreply, if no
 helloreply in 3 seconds, sends hello again, repeats 3 times.
 
  */
@@ -268,7 +268,7 @@ pub fn keep_alive_to_peer(
             std::thread::sleep(Duration::from_secs(5));
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHello(None, vec![97, 105, 115, 116], sock_addr),
+                Action::SendHello(None, vec![97, 110, 105, 116], sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
         }
@@ -284,61 +284,182 @@ pub async fn peek_until_hello_reply_from(
 ) -> Result<Action, PeerError> {
     /*Curr not working because stuck in waiting process queue
     try with two tasks or two futures */
-        let task_handle = tokio::spawn(async move{
-            loop {
-                /*Wait notify all from receive task */
-                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
-                    Some(front) => front,
-                    None => {
-                        process_queue_state.wait();
+    let task_handle = tokio::spawn(async move {
+        loop {
+            /*Wait notify all from receive task */
+            let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                Some(front) => front,
+                None => {
+                    process_queue_state.wait();
+                    continue;
+                }
+            };
+            match front {
+                Action::ProcessHelloReply(.., addr) => {
+                    if addr == sock_addr {
+                        break Ok::<Action, PeerError>(front);
+                    } else {
                         continue;
                     }
-                };
-                match front {
-                    Action::ProcessHelloReply(.., addr) => {
-                        if addr == sock_addr {
-                            break Ok::<Action, PeerError>(front);
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
                 }
+                _ => continue,
             }
-        });
-        let abort_task_handle = task_handle.abort_handle();
+        }
+    });
+    let abort_task_handle = task_handle.abort_handle();
 
-        let timeout_handle = tokio::spawn( async move {
-            let timeout = sleep(Duration::from_secs(3)).await;
-            if abort_task_handle.is_finished() {
-                /*Never happens */
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
-            } else {
-                abort_task_handle.abort();
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+    let timeout_handle = tokio::spawn(async move {
+        let timeout = sleep(Duration::from_secs(3)).await;
+        if abort_task_handle.is_finished() {
+            /*Never happens */
+            return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        } else {
+            abort_task_handle.abort();
+            return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        }
+    });
+    /* Return when either response time out or received a packet
+    corresponding */
+    select! {
+        timed_out = timeout_handle => {
+            match timed_out {
+                Ok(result)=> match result {
+                    Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
+                    _=>panic!("Shouldn't happen"),
+                },
+                Err(_)=> panic!("time out task panicked"),
             }
-        });
-        /* Return when either response time out or received a packet
-        corresponding */
-        select! {
-            timed_out = timeout_handle => {
-                match timed_out {
-                    Ok(result)=> match result {
-                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
-                        _=>panic!("Shouldn't happen"),
-                    },
-                    Err(_)=> panic!("time out task panicked"),
-                }
+        }
+        action = task_handle => {
+            match action {
+                Ok(result)=> match result {
+                    Ok(action)=> return Ok(action),
+                    _=>panic!("Shouldn't happen"),
+                },
+                Err(_)=> panic!("time out task panicked"),
             }
-            action = task_handle => {
-                match action {
-                    Ok(result)=> match result {
-                        Ok(action)=> return Ok(action),
-                        _=>panic!("Shouldn't happen"),
-                    },
-                    Err(_)=> panic!("time out task panicked"),
-                }
-            }
-        };
+        }
+    };
 }
 
+pub async fn fetch_tree_from(
+    peek_process_queue: Arc<RwLock<Queue<Action>>>,
+    process_queue_state: Arc<QueueState>,
+    action_queue: Arc<Mutex<Queue<Action>>>,
+    action_queue_state: Arc<QueueState>,
+    sock_addr: SocketAddr,
+) -> Result<HashMap<[u8; 32], [u8; 32]>, PeerError> {
+
+    let handle = tokio::spawn(async move {
+        let mut parent_to_childs_map = HashMap::<[u8; 32], [u8; 32]>::new();
+
+        loop{
+            match peek_until_datum_from(
+                Arc::clone(&peek_process_queue),
+                Arc::clone(&process_queue_state),
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                sock_addr.clone(),
+            )
+            .await
+            {
+                Ok(datum_action) => {
+                    parent_to_childs_map = get_fs_tree_hashmap(datum_action, parent_to_childs_map);
+                }
+                Err(PeerError::ResponseTimeout) => break Err(PeerError::ResponseTimeout),
+                _=> todo!(),
+            };
+        }
+    }).await.unwrap();
+    handle
+
+}
+
+pub async fn download(
+    peek_process_queue: Arc<RwLock<Queue<Action>>>,
+    process_queue_state: Arc<QueueState>,
+    action_queue: Arc<Mutex<Queue<Action>>>,
+    action_queue_state: Arc<QueueState>,
+    sock_addr: SocketAddr,
+) {
+    let tree_map = fetch_tree_from(
+        Arc::clone(&peek_process_queue),
+        Arc::clone(&process_queue_state),
+        Arc::clone(&action_queue),
+        Arc::clone(&action_queue_state),
+        sock_addr,
+    )
+    .await;
+
+    let tree_map = match tree_map {
+        Ok(tree_map) => tree_map,
+        Err(_) => todo!(),
+    };
+}
+
+pub async fn peek_until_datum_from(
+    peek_process_queue: Arc<RwLock<Queue<Action>>>,
+    process_queue_state: Arc<QueueState>,
+    action_queue: Arc<Mutex<Queue<Action>>>,
+    action_queue_state: Arc<QueueState>,
+    sock_addr: SocketAddr,
+) -> Result<Action, PeerError> {
+    /*Curr not working because stuck in waiting process queue
+    try with two tasks or two futures */
+    let task_handle = tokio::spawn(async move {
+        loop {
+            /*Wait notify all from receive task */
+            let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                Some(front) => front,
+                None => {
+                    process_queue_state.wait();
+                    continue;
+                }
+            };
+            match front {
+                Action::ProcessDatum(.., addr) => {
+                    if addr == sock_addr {
+                        break Ok::<Action, PeerError>(front);
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue,
+            }
+        }
+    });
+    let abort_task_handle = task_handle.abort_handle();
+
+    let timeout_handle = tokio::spawn(async move {
+        let timeout = sleep(Duration::from_secs(3)).await;
+        if abort_task_handle.is_finished() {
+            /*Never happens */
+            return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        } else {
+            abort_task_handle.abort();
+            return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        }
+    });
+    /* Return when either response time out or received a packet
+    corresponding */
+    select! {
+        timed_out = timeout_handle => {
+            match timed_out {
+                Ok(result)=> match result {
+                    Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
+                    _=>panic!("Shouldn't happen"),
+                },
+                Err(_)=> panic!("time out task panicked"),
+            }
+        }
+        action = task_handle => {
+            match action {
+                Ok(result)=> match result {
+                    Ok(action)=> return Ok(action),
+                    _=>panic!("Shouldn't happen"),
+                },
+                Err(_)=> panic!("time out task panicked"),
+            }
+        }
+    };
+}
