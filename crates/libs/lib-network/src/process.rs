@@ -345,28 +345,23 @@ pub async fn peek_until_hello_reply_from(
     };
 }
 
-
 pub async fn fetch_subtree_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
-    active_peers: Arc<Mutex<ActivePeers>>,
-    hash: [u8;32],
-    sock_addr: SocketAddr,
     child_to_parent_hashmap: Arc<Mutex<HashMap<[u8; 32], Vec<[u8; 32]>>>>,
-    parent_to_child_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
-    name_to_hash_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
-    hash_to_name_hashmap: Arc<Mutex<HashMap<[u8;32], [u8;32]>>>,
-){
+    parent_to_child_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
+    name_to_hash_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
+    hash_to_name_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
+    hash: [u8; 32],
+    sock_addr: SocketAddr,
+) {
     tokio::spawn(async move {
         loop {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendGetDatumWithHash(
-                    hash.clone(),
-                    *&sock_addr,
-                ),
+                Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             match peek_until_datum_with_hash_from(
@@ -380,13 +375,20 @@ pub async fn fetch_subtree_from(
             .await
             {
                 Ok(datum_action) => {
-                    get_parent_to_child_hashmap(&datum_action, Arc::clone(&child_to_parent_hashmap));
-                    get_child_to_parent_hashmap(&datum_action, Arc::clone(&parent_to_child_hashmap));
+                    get_parent_to_child_hashmap(
+                        &datum_action,
+                        Arc::clone(&child_to_parent_hashmap),
+                    );
+                    get_child_to_parent_hashmap(
+                        &datum_action,
+                        Arc::clone(&parent_to_child_hashmap),
+                    );
                 }
-                Err(PeerError::ResponseTimeout) => break Err::<Action,PeerError>(PeerError::ResponseTimeout),
+                Err(PeerError::ResponseTimeout) => {
+                    break Err::<Action, PeerError>(PeerError::ResponseTimeout)
+                }
                 _ => todo!(),
             };
-
 
             // for child in childs
         }
@@ -401,7 +403,7 @@ pub async fn download(
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
-    hash: [u8;32],
+    hash: [u8; 32],
     sock_addr: SocketAddr,
 ) {
     /*Peer has to have been handshaked before */
@@ -422,8 +424,6 @@ pub async fn download(
     //     Err(PeerError::ResponseTimeout)=> todo!(),
     //     _=>todo!(),
     // };
-
-
 }
 
 pub async fn peek_until_datum_with_hash_from(
@@ -431,7 +431,7 @@ pub async fn peek_until_datum_with_hash_from(
     process_queue_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
-    hash: [u8;32],
+    hash: [u8; 32],
     sock_addr: SocketAddr,
 ) -> Result<Action, PeerError> {
     /*Curr not working because stuck in waiting process queue
@@ -448,9 +448,9 @@ pub async fn peek_until_datum_with_hash_from(
             };
             match front {
                 Action::ProcessDatum(datum, addr) => {
-                    let mut datum_hash = [0u8;32];
+                    let mut datum_hash = [0u8; 32];
                     datum_hash.copy_from_slice(&datum.as_slice()[0..32]);
-                    if (addr == sock_addr) && (datum_hash == hash){
+                    if (addr == sock_addr) && (datum_hash == hash) {
                         break Ok::<Action, PeerError>(Action::ProcessDatum(datum, addr));
                     } else {
                         continue;
