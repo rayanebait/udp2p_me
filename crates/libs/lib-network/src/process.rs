@@ -349,6 +349,7 @@ pub async fn peek_until_hello_reply_from(
     };
 }
 
+#[async_recursion::async_recursion]
 pub async fn fetch_subtree_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
@@ -364,63 +365,68 @@ pub async fn fetch_subtree_from(
     >,
     hash: [u8; 32],
     sock_addr: SocketAddr,
-) {
-    tokio::spawn(async move {
-        let mut subtasks = vec![];
-        let children: Option<Vec<[u8; 32]>>;
+) -> Result<(), PeerError>{
+    let mut subtasks = vec![];
+    let children: Option<Vec<[u8; 32]>>;
 
-        Queue::lock_and_push(
-            Arc::clone(&action_queue),
-            Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
-        );
-        QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+    Queue::lock_and_push(
+        Arc::clone(&action_queue),
+        Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
+    );
+    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
 
-        match peek_until_datum_with_hash_from(
-            Arc::clone(&peek_process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            *&hash,
-            *&sock_addr,
-        )
-        .await
-        {
-            Ok(datum_action) => {
-                children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
-                    Ok(childs) => match childs {
-                        Some(childs) => {
-                            Some(childs)
-                        }
-                        None => None,
-                    },
-                    Err(PeerError::InvalidPacket) => None,
-                    _ => panic!("Shouldn't happen"),
-                };
-            }
-            Err(PeerError::ResponseTimeout) => {
-                children = None
-                // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
-            }
-            _ => todo!(),
-        };
-        match children {
-            Some(childs)=> {
-                for child_hash in childs{
-                    subtasks.push(fetch_subtree_from(
-                        Arc::clone(&peek_process_queue),
-                            Arc::clone(&process_queue_state),
-                            Arc::clone(&action_queue),
-                            Arc::clone(&action_queue_state),
-                            Arc::clone(&maps),
-                            child_hash,
-                            sock_addr,
-                        ));
-            }},
-            None =>(),
-        };
-        join_all(subtasks);
-    })
-    .await;
+    match peek_until_datum_with_hash_from(
+        Arc::clone(&peek_process_queue),
+        Arc::clone(&process_queue_state),
+        Arc::clone(&action_queue),
+        Arc::clone(&action_queue_state),
+        *&hash,
+        *&sock_addr,
+    )
+    .await
+    {
+        Ok(datum_action) => {
+            children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
+                Ok(childs) => match childs {
+                    Some(childs) => {
+                        Some(childs)
+                    }
+                    None => None,
+                },
+                Err(PeerError::InvalidPacket) => return Err(PeerError::InvalidPacket),
+                _ => panic!("Shouldn't happen"),
+            };
+        }
+        Err(PeerError::ResponseTimeout) => {
+            return Err(PeerError::ResponseTimeout)
+            // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
+        }
+        _ => todo!(),
+    };
+    match children {
+        Some(childs)=> {
+            for child_hash in childs{
+                subtasks.push(fetch_subtree_from(
+                    Arc::clone(&peek_process_queue),
+                        Arc::clone(&process_queue_state),
+                        Arc::clone(&action_queue),
+                        Arc::clone(&action_queue_state),
+                        Arc::clone(&maps),
+                        child_hash,
+                        sock_addr,
+                    ));
+        }},
+        None =>return Ok(()),
+    };
+    let completed = join_all(subtasks).await;
+    for result in completed {
+        match result {
+            Ok(())=>continue,
+            Err(e)=>return Err(e),
+        }
+    }
+
+    Ok(())
 }
 
 /*Given a hash it downloads all files under it  */
