@@ -357,7 +357,8 @@ pub async fn fetch_tree_from(
         HashMap<[u8; 32], Vec<[u8; 32]>>,
         HashMap<[u8; 32], [u8; 32]>,
     ),
-    PeerError> {
+    PeerError,
+> {
     let handle = tokio::spawn(async move {
         let mut child_to_parent_hashmap = HashMap::<[u8; 32], [u8; 32]>::new();
         let mut parent_to_child_hashmap = HashMap::<[u8; 32], Vec<[u8; 32]>>::new();
@@ -388,10 +389,8 @@ pub async fn fetch_tree_from(
             .await
             {
                 Ok(datum_action) => {
-                    child_to_parent_hashmap =
-                        get_child_to_parent_hashmap(datum_action.clone(), child_to_parent_hashmap);
-                    parent_to_child_hashmap =
-                        get_parent_to_child_hashmap(datum_action, parent_to_child_hashmap);
+                    get_child_to_parent_hashmap(&datum_action, &mut child_to_parent_hashmap);
+                    get_parent_to_child_hashmap(&datum_action, &mut parent_to_child_hashmap);
                 }
                 Err(PeerError::ResponseTimeout) => break Err(PeerError::ResponseTimeout),
                 _ => todo!(),
