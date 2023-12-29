@@ -4,14 +4,14 @@ use crate::action::Action;
 use std::sync::{Arc, Mutex, PoisonError};
 
 pub fn get_child_to_parent_hashmap(
-    action: Action,
+    action: &Action,
     hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
-){
+) {
     let mut hashmap = match hashmap.lock() {
         Ok(guard) => guard,
         Err(PoisonError) => panic!("Some tasks panicked in hashmap building"),
     };
-    
+
     match action {
         Action::ProcessDatum(data, address) => {
             // println!("Process datum");
@@ -30,7 +30,7 @@ pub fn get_child_to_parent_hashmap(
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
                         // println!("Hash [{i}] = {leaf:?}");
-                        c_to_p_hashmap.insert(leaf_slice, hash);
+                        hashmap.insert(leaf_slice, hash);
                     }
                 }
                 2 => {
@@ -41,7 +41,7 @@ pub fn get_child_to_parent_hashmap(
                         let leaf = leaf.get(32..).unwrap();
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
-                        c_to_p_hashmap.insert(leaf_slice, hash);
+                        hashmap.insert(leaf_slice, hash);
                     }
                 }
                 _ => {
@@ -56,7 +56,7 @@ pub fn get_child_to_parent_hashmap(
 }
 
 pub fn get_parent_to_child_hashmap(
-    action: Action,
+    action: &Action,
     hashmap: Arc<Mutex<HashMap<[u8; 32], Vec<[u8; 32]>>>>,
 ) {
     let mut hashmap = match hashmap.lock() {
@@ -77,17 +77,17 @@ pub fn get_parent_to_child_hashmap(
                 }
                 1 => {
                     // println!("Tree");
-                    let leaves: Vec<[u8; 32]> = data
-                        .get(33..)
-                        .unwrap()
-                        .chunks(32)
-                        .map(|s| {
-                            let mut leaf_slice = [0u8; 32];
-                            leaf_slice.copy_from_slice(s);
-                            leaf_slice
-                        })
-                        .collect();
-                    p_to_c_hashmap.insert(hash, leaves);
+                    // let leaves: Vec<[u8; 32]> = data
+                    //     .get(33..)
+                    //     .unwrap()
+                    //     .chunks(32)
+                    //     .map(|s| {
+                    //         let mut leaf_slice = [0u8; 32];
+                    //         leaf_slice.copy_from_slice(s);
+                    //         leaf_slice
+                    //     })
+                    //     .collect();
+                    // p_to_c_hashmap.insert(hash, leaves);
                 }
                 2 => {
                     // println!("Directory");
@@ -100,7 +100,7 @@ pub fn get_parent_to_child_hashmap(
                         leaf_slice.copy_from_slice(&leaf);
                         children.push(leaf_slice);
                     }
-                    p_to_c_hashmap.insert(hash, children);
+                    hashmap.insert(hash, children);
                 }
                 _ => {
                     println!("Not a mkfs node")
@@ -279,7 +279,7 @@ pub mod test {
 
         let action = Action::ProcessDatum(data, address);
         let mut hashmap = Arc::new(Mutex::new(HashMap::<[u8; 32], [u8; 32]>::new()));
-        get_child_to_parent_hashmap(action, Arc::clone(&hashmap));
+        get_child_to_parent_hashmap(&action, Arc::clone(&hashmap));
         let hashmap = hashmap.lock().unwrap();
         println!("{:?}", hashmap);
     }
@@ -299,8 +299,8 @@ pub mod test {
         ];
 
         let action = Action::ProcessDatum(data, address);
-        let mut p_to_c_hashmap = HashMap::<[u8; 32], Vec<[u8; 32]>>::new();
-        get_parent_to_child_hashmap(&action, &mut p_to_c_hashmap);
+        let mut p_to_c_hashmap = Arc::new(Mutex::new(HashMap::<[u8; 32], Vec<[u8; 32]>>::new()));
+        get_parent_to_child_hashmap(&action, Arc::clone(&p_to_c_hashmap));
         // println!("{:?}", p_to_c_hashmap);
     }
 
@@ -319,8 +319,8 @@ pub mod test {
         ];
 
         let action = Action::ProcessDatum(data, address);
-        let mut c_to_p_hashmap = HashMap::<[u8; 32], [u8; 32]>::new();
-        get_child_to_parent_hashmap(&action, &mut c_to_p_hashmap);
+        let mut c_to_p_hashmap = Arc::new(Mutex::new(HashMap::<[u8; 32], [u8; 32]>::new()));
+        get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
         let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
         get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
         // println!("{:?}", h_to_n_hashmap);
@@ -341,8 +341,8 @@ pub mod test {
         ];
 
         let action = Action::ProcessDatum(data, address);
-        let mut c_to_p_hashmap = HashMap::<[u8; 32], [u8; 32]>::new();
-        get_child_to_parent_hashmap(&action, &mut c_to_p_hashmap);
+        let mut c_to_p_hashmap =Arc::new(Mutex::new( HashMap::<[u8; 32], [u8; 32]>::new()));
+        get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
         let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
         get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
         let mut n_to_h_hashmap = HashMap::<String, Vec<[u8; 32]>>::new();

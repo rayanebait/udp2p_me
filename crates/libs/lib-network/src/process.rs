@@ -377,8 +377,8 @@ pub async fn fetch_subtree_from(
             .await
             {
                 Ok(datum_action) => {
-                    get_parent_to_child_hashmap(datum_action.clone(), Arc::clone(&child_to_parent_hashmap));
-                    get_child_to_parent_hashmap(datum_action, Arc::clone(&parent_to_child_hashmap));
+                    get_parent_to_child_hashmap(&datum_action, Arc::clone(&child_to_parent_hashmap));
+                    get_child_to_parent_hashmap(&datum_action, Arc::clone(&parent_to_child_hashmap));
                 }
                 Err(PeerError::ResponseTimeout) => break Err::<Action,PeerError>(PeerError::ResponseTimeout),
                 _ => todo!(),
