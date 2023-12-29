@@ -1,17 +1,26 @@
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
+use hex;
+use lib_network::packet::{self, PacketBuilder};
+use lib_web::discovery;
 use log::{debug, error, info, warn};
-// use anyhow::bail;
-// use lib_file::mk_fs::MktFsNode;
-// use std::path::PathBuf;
+use tokio;
 
 #[derive(Parser)]
 #[command(name = "UDP2P-cli")]
-#[command(author = "Educated fool")]
+#[command(author = "NIST team M2 MIC")]
 #[command(version = "1.0")]
-#[command(about = "P2P data exchange using UDP and NAT traversal.", long_about = None)]
+#[command(about = "
+ _    _ _____  _____ ___  _____
+| |  | |  __ \\|  __ \\__ \\|  __ \\
+| |  | | |  | | |__) | ) | |__) |
+| |  | | |  | |  ___/ / /|  ___/
+| |__| | |__| | |    / /_| |
+ \\____/|_____/|_|   |____|_|\n
+P2P data exchange using UDP and NAT traversal.")]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
@@ -20,70 +29,74 @@ enum Commands {
     FetchPeers {
         /// Url of peers page
         #[arg(short = 'u', long)]
-        host: Option<String>,
+        host: String,
     },
-    FetchPeerData{
-        /// Url of peers page
+    /// Fetch the infos of a peer
+    FetchPeerInfo {
+        /// Url of the peers server
         #[arg(short = 'u', long)]
-        host: Option<String>,
-    },
+        host: String,
 
+        /// Peer name
+        #[arg(short, long)]
+        peer: String,
+    },
+    /// Download the datum associated with a hash
+    GetDatum {
+        /// Address of the peer
+        #[arg(short, long)]
+        peer: String,
+        /// Datum hash
+        #[arg(short, long)]
+        datum: String,
+    },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::FetchPeers { host }) => {
-            println!("{:?}", host); // if host is not provided in correct form, the app will tell the user
+        Commands::FetchPeers { host } => {
+            log::info!("Fetching peers from central server {}.", host);
+            let client = discovery::get_client(5)?;
+            let url = discovery::parse_url(host)?;
+            let peers = discovery::get_peers_names(client, &url).await?;
+            println!("Peers :");
+            for (i, peer) in peers.iter().enumerate() {
+                println!("\t[{i}] = {peer}");
+            }
         }
-        None => {
+        Commands::FetchPeerInfo { host, peer } => {
+            log::info!(
+                "Fetching peer infos for peer {} from central server {}.",
+                peer,
+                host
+            );
+            let client = discovery::get_client(5)?;
+            let url = discovery::parse_url(host)?;
+            let peers = discovery::get_peer_addresses(client, &url, &peer).await?;
+            println!("{peers:?}");
+        }
+        Commands::GetDatum { peer, datum } => {
+            log::info!("Fetching datum from peer {} with hash {}.", peer, datum);
+            let datum_bytes = match hex::decode(datum) {
+                Ok(h) => h,
+                Err(e) => bail!("Failed to decode root hash. Please check your input."),
+            };
+            let packet = PacketBuilder::new()
+                .gen_id()
+                .packet_type(packet::PacketType::GetDatum)
+                .body(datum_bytes)
+                .build()
+                .unwrap_or_default();
+            println!("{packet:#?}");
+            println!("{:#?}", packet.as_bytes());
+        }
+        _ => {
             println!("No subcommand");
-        },
-        _=>(),
+        }
     }
+    return Ok(());
 }
-
-/*
-let match_result = command!()
-        .about("Connect to a distributed file sharing network of peers even behind a NAT.")
-        .subcommand(
-            Command::new("fetch-peers")
-                .arg(
-                    Arg::new("host")
-                        .short('H')
-                        .long("host")
-                        .default_value("https://jch.irif.fr:8443")
-                        .help("Hostname for the central server hosting the list of peers."),
-                )
-                .arg(
-                    Arg::new("peers")
-                        .long("peers")
-                        .help("Peers directory location")
-                        .default_value("/peers"),
-                ),
-        )
-        .get_matches();
-
-    let default_host = String::from("https://jch.irif.fr:8443");
-    let host = match_result
-        .subcommand_matches("fetch-peers")
-        .unwrap()
-        .get_one::<String>("host")
-        .unwrap();
-    let peers_directory = match_result
-        .subcommand_matches("fetch-peers")
-        .unwrap()
-        .get_one::<String>("peers")
-        .unwrap();
-
-    println!("Fetching peers from : {}", host);
-    println!("Directory : {}", peers_directory);
-
-    let peers = udp2p::basic(&host)
-        .await
-        .expect("Could not retrieve peers.");
-
-    println!("Got peers {}", peers);
-} */
