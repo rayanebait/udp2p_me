@@ -299,9 +299,10 @@ mod tests {
         // let n = metrics.active_tasks_count();
         // println!("Runtime has {} active tasks", n);
 
-        join!(f1, f2, f3,
-            //  f4,
-              f5);
+        join!(
+            f1, f2, f3, //  f4,
+            f5
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]

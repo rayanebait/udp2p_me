@@ -2,8 +2,6 @@
 name = "cli"
 version = "0.1.0"
 edition = "2021"
-about = "P2P data exchange using UDP and NAT traversal."
-long_about = "Lonnnnnng about"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,8 +9,12 @@ long_about = "Lonnnnnng about"
 anyhow = "1.0.75"
 clap = { version = "4.4.11", features = ["cargo", "derive"] }
 env_logger = "0.10.1"
-lib-file = {path = "../../libs/lib-file"}
+hex = "0.4.3"
+lib-file = { version = "0.1.0", path = "../../libs/lib-file" }
+lib-network = { version = "0.1.0", path = "../../libs/lib-network" }
+lib-web = { version = "0.1.0", path = "../../libs/lib-web" }
 log = "0.4.20"
+tokio = { version = "1.35.1", features = ["macros"] }
 
 [lints]
 workspace = true
