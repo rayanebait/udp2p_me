@@ -20,6 +20,7 @@ pub async fn handle_packet_task(
     receive_queue_state: Arc<QueueState>,
     process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
+    process_queue_readers_state: Arc<QueueState>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -50,6 +51,7 @@ pub async fn handle_packet_task(
                 Ok(action) => {
                     /* we have an action, push it to the queue*/
                     Queue::write_lock_and_push(Arc::clone(&process_queue), action);
+                    QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
                     continue;
                 }

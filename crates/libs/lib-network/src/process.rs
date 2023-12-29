@@ -15,7 +15,7 @@ use tokio::time::{sleep, Sleep};
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
-use crate::store::get_fs_tree_hashmap;
+use crate::store::{get_child_to_parent_hashmap, get_parent_to_child_hashmap};
 use crate::{action, congestion_handler::*};
 
 use lib_file::mk_fs::{self, MktFsNode};
@@ -38,9 +38,10 @@ pub async fn process_task(
     //hash_map:?
     //self_data:?
 ) {
+    //Should pop only if too full ? For subtasks to have time to read
     tokio::spawn(async move {
         loop {
-            match Queue::write_lock_and_pop(Arc::clone(&process_queue)) {
+            match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
                 Some(action) => {
                     /*action queue is not empty get an action and handle it*/
                     // println!("process: {:?}\n", action);
@@ -221,6 +222,7 @@ helloreply in 3 seconds, sends hello again, repeats 3 times.
 pub async fn register(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
+    process_queue_readers_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     my_data: Arc<Peer>,
@@ -238,6 +240,7 @@ pub async fn register(
         match peek_until_hello_reply_from(
             Arc::clone(&peek_process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             server_sock_addr,
@@ -278,19 +281,19 @@ pub fn keep_alive_to_peer(
 pub async fn peek_until_hello_reply_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
+    process_queue_readers_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     sock_addr: SocketAddr,
 ) -> Result<Action, PeerError> {
-    /*Curr not working because stuck in waiting process queue
-    try with two tasks or two futures */
+    /*Repeatedly peeks process queue to check  */
     let task_handle = tokio::spawn(async move {
         loop {
             /*Wait notify all from receive task */
             let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
                 Some(front) => front,
                 None => {
-                    process_queue_state.wait();
+                    process_queue_readers_state.wait();
                     continue;
                 }
             };
@@ -347,13 +350,34 @@ pub async fn fetch_tree_from(
     process_queue_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
+    active_peers: Arc<Mutex<ActivePeers>>,
     sock_addr: SocketAddr,
-) -> Result<HashMap<[u8; 32], [u8; 32]>, PeerError> {
-
+) -> Result<
+    (
+        HashMap<[u8; 32], Vec<[u8; 32]>>,
+        HashMap<[u8; 32], [u8; 32]>,
+    ),
+    PeerError> {
     let handle = tokio::spawn(async move {
-        let mut parent_to_childs_map = HashMap::<[u8; 32], [u8; 32]>::new();
+        let mut child_to_parent_hashmap = HashMap::<[u8; 32], [u8; 32]>::new();
+        let mut parent_to_child_hashmap = HashMap::<[u8; 32], Vec<[u8; 32]>>::new();
+        let peer = match ActivePeers::lock_and_get(active_peers, *&sock_addr) {
+            Some(peer) => peer,
+            None => return Err(PeerError::UnknownPeer),
+        };
 
-        loop{
+        Queue::lock_and_push(
+            Arc::clone(&action_queue),
+            Action::SendGetDatumWithHash(
+                match peer.get_root_hash() {
+                    Some(hash) => hash,
+                    None => return Err(PeerError::NoHash),
+                },
+                *&sock_addr,
+            ),
+        );
+
+        loop {
             match peek_until_datum_from(
                 Arc::clone(&peek_process_queue),
                 Arc::clone(&process_queue_state),
@@ -364,15 +388,19 @@ pub async fn fetch_tree_from(
             .await
             {
                 Ok(datum_action) => {
-                    parent_to_childs_map = get_fs_tree_hashmap(datum_action, parent_to_childs_map);
+                    child_to_parent_hashmap =
+                        get_child_to_parent_hashmap(datum_action.clone(), child_to_parent_hashmap);
+                    parent_to_child_hashmap =
+                        get_parent_to_child_hashmap(datum_action, parent_to_child_hashmap);
                 }
                 Err(PeerError::ResponseTimeout) => break Err(PeerError::ResponseTimeout),
-                _=> todo!(),
+                _ => todo!(),
             };
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     handle
-
 }
 
 pub async fn download(
@@ -380,21 +408,18 @@ pub async fn download(
     process_queue_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
+    active_peers: Arc<Mutex<ActivePeers>>,
     sock_addr: SocketAddr,
 ) {
-    let tree_map = fetch_tree_from(
-        Arc::clone(&peek_process_queue),
-        Arc::clone(&process_queue_state),
-        Arc::clone(&action_queue),
-        Arc::clone(&action_queue_state),
-        sock_addr,
-    )
-    .await;
-
-    let tree_map = match tree_map {
-        Ok(tree_map) => tree_map,
-        Err(_) => todo!(),
-    };
+    // let (parent_to_child_map, child_to_parent_map) = fetch_tree_from(
+    //     Arc::clone(&peek_process_queue),
+    //     Arc::clone(&process_queue_state),
+    //     Arc::clone(&action_queue),
+    //     Arc::clone(&action_queue_state),
+    //     Arc::clone(&active_peers),
+    //     sock_addr,
+    // )
+    // .await;
 }
 
 pub async fn peek_until_datum_from(

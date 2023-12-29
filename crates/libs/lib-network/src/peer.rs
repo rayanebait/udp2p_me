@@ -131,6 +131,13 @@ pub mod peer {
                 self.addr_map.remove(addr);
             };
         }
+        pub fn lock_and_get(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr)->Option<Peer>{
+            let mut active_peers = match active_peers.lock(){
+                Ok(active_peers)=> active_peers,
+                Err(_)=>panic!("Peers mutex is poisoned"),
+            };
+            active_peers.addr_map.get(&sock_addr).cloned()
+        }
         pub fn lock_and_push(active_peers: Arc<Mutex<ActivePeers>>, peer: Peer){
             let mut active_peers = match active_peers.lock(){
                 Ok(active_peers)=> active_peers,

@@ -239,6 +239,7 @@ mod tests {
             action_queue_state,
             send_queue_state,
             process_queue_state,
+            process_queue_readers_state,
         ) = build_queues();
 
         let active_peers = ActivePeers::build_mutex();
@@ -267,6 +268,7 @@ mod tests {
             Arc::clone(&receive_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
         );
         let f3 = handle_action_task(
             Arc::clone(&send_queue),
@@ -319,6 +321,7 @@ mod tests {
             action_queue_state,
             send_queue_state,
             process_queue_state,
+            process_queue_readers_state,
         ) = build_queues();
 
         let active_peers = ActivePeers::build_mutex();
@@ -339,6 +342,7 @@ mod tests {
             Arc::clone(&receive_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
         );
         let processing_two = handle_action_task(
             Arc::clone(&send_queue),
@@ -370,6 +374,7 @@ mod tests {
         let registering = register(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&my_data),
@@ -409,6 +414,7 @@ mod tests {
             action_queue_state,
             send_queue_state,
             process_queue_state,
+            process_queue_readers_state,
         ) = build_queues();
 
         let active_peers = ActivePeers::build_mutex();
@@ -429,6 +435,7 @@ mod tests {
             Arc::clone(&receive_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
         );
         let processing_two = handle_action_task(
             Arc::clone(&send_queue),
@@ -461,6 +468,7 @@ mod tests {
         let registering = register(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&my_data),
