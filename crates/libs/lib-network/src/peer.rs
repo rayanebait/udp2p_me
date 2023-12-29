@@ -22,6 +22,8 @@ pub mod peer {
         UnknownPeer,
         #[error("Unknown error")]
         Unknown,
+        #[error("Invalid packet")]
+        InvalidPacket,
     }
 
     #[derive(Default, Clone)]

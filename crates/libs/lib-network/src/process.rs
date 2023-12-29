@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::Future;
 use tokio::join;
@@ -15,7 +16,10 @@ use tokio::time::{sleep, Sleep};
 use crate::action::Action;
 use crate::packet::PacketBuilder;
 use crate::peer::peer::*;
-use crate::store::{get_child_to_parent_hashmap, get_parent_to_child_hashmap};
+use crate::store::{
+    build_tree_maps, get_child_to_parent_hashmap, get_hash_to_name_hashmap,
+    get_parent_to_child_hashmap,
+};
 use crate::{action, congestion_handler::*};
 
 use lib_file::mk_fs::{self, MktFsNode};
@@ -350,48 +354,71 @@ pub async fn fetch_subtree_from(
     process_queue_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
-    child_to_parent_hashmap: Arc<Mutex<HashMap<[u8; 32], Vec<[u8; 32]>>>>,
-    parent_to_child_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
-    name_to_hash_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
-    hash_to_name_hashmap: Arc<Mutex<HashMap<[u8; 32], [u8; 32]>>>,
+    maps: Arc<
+        Mutex<(
+            HashMap<[u8; 32], [u8; 32]>,
+            HashMap<[u8; 32], Vec<[u8; 32]>>,
+            HashMap<[u8; 32], String>,
+            HashMap<String, Vec<[u8; 32]>>,
+        )>,
+    >,
     hash: [u8; 32],
     sock_addr: SocketAddr,
 ) {
     tokio::spawn(async move {
-        loop {
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
-            );
-            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            match peek_until_datum_with_hash_from(
-                Arc::clone(&peek_process_queue),
-                Arc::clone(&process_queue_state),
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                *&hash,
-                *&sock_addr,
-            )
-            .await
-            {
-                Ok(datum_action) => {
-                    get_parent_to_child_hashmap(
-                        &datum_action,
-                        Arc::clone(&child_to_parent_hashmap),
-                    );
-                    get_child_to_parent_hashmap(
-                        &datum_action,
-                        Arc::clone(&parent_to_child_hashmap),
-                    );
-                }
-                Err(PeerError::ResponseTimeout) => {
-                    break Err::<Action, PeerError>(PeerError::ResponseTimeout)
-                }
-                _ => todo!(),
-            };
+        let mut subtasks = vec![];
+        let children: Option<Vec<[u8; 32]>>;
 
-            // for child in childs
-        }
+        Queue::lock_and_push(
+            Arc::clone(&action_queue),
+            Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
+        );
+        QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+
+        match peek_until_datum_with_hash_from(
+            Arc::clone(&peek_process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            *&hash,
+            *&sock_addr,
+        )
+        .await
+        {
+            Ok(datum_action) => {
+                children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
+                    Ok(childs) => match childs {
+                        Some(childs) => {
+                            Some(childs)
+                        }
+                        None => None,
+                    },
+                    Err(PeerError::InvalidPacket) => None,
+                    _ => panic!("Shouldn't happen"),
+                };
+            }
+            Err(PeerError::ResponseTimeout) => {
+                children = None
+                // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
+            }
+            _ => todo!(),
+        };
+        match children {
+            Some(childs)=> {
+                for child_hash in childs{
+                    subtasks.push(fetch_subtree_from(
+                        Arc::clone(&peek_process_queue),
+                            Arc::clone(&process_queue_state),
+                            Arc::clone(&action_queue),
+                            Arc::clone(&action_queue_state),
+                            Arc::clone(&maps),
+                            child_hash,
+                            sock_addr,
+                        ));
+            }},
+            None =>(),
+        };
+        join_all(subtasks);
     })
     .await;
 }
