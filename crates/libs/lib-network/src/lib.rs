@@ -511,44 +511,101 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
 
-        let receiving = receiver(
-            Arc::clone(&sock),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-        );
+        // let receiving = receiver(
+        //     Arc::clone(&sock),
+        //     Arc::clone(&receive_queue),
+        //     Arc::clone(&receive_queue_state),
+        // );
 
-        let handling = handle_packet_task(
-            Arc::clone(&pending_ids),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&process_queue_readers_state),
-        );
-        let processing_two = handle_action_task(
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-        );
-        let processing_one = process_task(
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&active_peers),
-            Arc::clone(&my_data),
-            // Arc::clone(&map)
-        );
+        // let handling = handle_packet_task(
+        //     Arc::clone(&pending_ids),
+        //     Arc::clone(&receive_queue),
+        //     Arc::clone(&receive_queue_state),
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_state),
+        //     Arc::clone(&process_queue_readers_state),
+        // );
+        // let processing_two = handle_action_task(
+        //     Arc::clone(&send_queue),
+        //     Arc::clone(&send_queue_state),
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_state),
+        // );
+        // let processing_one = process_task(
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_state),
+        //     Arc::clone(&active_peers),
+        //     Arc::clone(&my_data),
+        //     // Arc::clone(&map)
+        // );
 
-        let sending = sender(
-            Arc::clone(&sock),
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&pending_ids),
-        );
+        // let sending = sender(
+        //     Arc::clone(&sock),
+        //     Arc::clone(&send_queue),
+        //     Arc::clone(&send_queue_state),
+        //     Arc::clone(&pending_ids),
+        // );
+
+        let active_peers_c = Arc::clone(&active_peers);
+        let my_data_c = Arc::clone(&my_data);
+        let sock_c = Arc::clone(&sock);
+        let receive_queue_c = Arc::clone(&receive_queue);
+        let send_queue_c = Arc::clone(&send_queue);
+        let action_queue_c = Arc::clone(&action_queue);
+        let process_queue_c = Arc::clone(&process_queue);
+        let pending_ids_c = Arc::clone(&pending_ids);
+        let receive_queue_state_c = Arc::clone(&receive_queue_state);
+        let action_queue_state_c = Arc::clone(&action_queue_state);
+        let send_queue_state_c = Arc::clone(&send_queue_state);
+        let process_queue_state_c = Arc::clone(&process_queue_state);
+        let process_queue_readers_state_c = Arc::clone(&process_queue_readers_state);
+
+        tokio::spawn(async move {
+            let receiving = receiver(
+                Arc::clone(&sock_c),
+                Arc::clone(&receive_queue_c),
+                Arc::clone(&receive_queue_state_c),
+            );
+
+            let handling = handle_packet_task(
+                Arc::clone(&pending_ids_c),
+                Arc::clone(&receive_queue_c),
+                Arc::clone(&receive_queue_state_c),
+                Arc::clone(&process_queue_c),
+                Arc::clone(&process_queue_state_c),
+                Arc::clone(&process_queue_readers_state_c),
+            );
+            let processing_two = handle_action_task(
+                Arc::clone(&send_queue_c),
+                Arc::clone(&send_queue_state_c),
+                Arc::clone(&action_queue_c),
+                Arc::clone(&action_queue_state_c),
+                Arc::clone(&process_queue_c),
+                Arc::clone(&process_queue_state_c),
+            );
+            let processing_one = process_task(
+                Arc::clone(&action_queue_c),
+                Arc::clone(&action_queue_state_c),
+                Arc::clone(&process_queue_c),
+                Arc::clone(&process_queue_state_c),
+                Arc::clone(&active_peers_c),
+                Arc::clone(&my_data_c),
+                // Arc::clone(&map)
+            );
+
+            let sending = sender(
+                Arc::clone(&sock_c),
+                Arc::clone(&send_queue_c),
+                Arc::clone(&send_queue_state_c),
+                Arc::clone(&pending_ids_c),
+            );
+
+            join!(receiving, handling, processing_one, processing_two, sending);
+        });
 
         // let metrics = Handle::current().metrics();
         // let n = metrics.active_tasks_count();
@@ -580,7 +637,7 @@ mod tests {
             191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
         ];
 
-        let fetching = fetch_subtree_from(
+        fetch_subtree_from(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
@@ -588,16 +645,12 @@ mod tests {
             Arc::clone(&maps),
             hash,
             sock_addr,
-        );
+        )
+        .await;
 
-        join!(
-            receiving,
-            handling,
-            processing_one,
-            processing_two,
-            sending,
-            // registering,
-            fetching
-        );
+        match maps.lock() {
+            Ok(m) => println!("{:?}", m),
+            _ => (),
+        }
     }
 }
