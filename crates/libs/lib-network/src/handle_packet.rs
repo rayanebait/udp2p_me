@@ -68,7 +68,7 @@ pub fn handle_packet(
     socket_addr: SocketAddr,
     pending_ids: Arc<Mutex<PendingIds>>,
 ) -> Result<Action, HandlingError> {
-    let id_exists = PendingIds::id_exists(Arc::clone(&pending_ids), &packet, socket_addr);
+    let id_exists = PendingIds::id_exists_and_pop(Arc::clone(&pending_ids), &packet, socket_addr);
 
     match id_exists {
         /*Packet is a response */

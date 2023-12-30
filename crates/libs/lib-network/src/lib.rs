@@ -169,7 +169,7 @@ mod tests {
         time::{sleep, Duration},
     };
 
-    use crate::congestion_handler::Queue;
+    use crate::congestion_handler::{Queue, QueueState};
     use crate::handle_action::*;
     use crate::handle_packet::handle_packet_task;
     use crate::packet::*;
@@ -487,7 +487,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_tree() {
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let maps = build_tree_mutex();
@@ -619,7 +619,8 @@ mod tests {
         //     Arc::clone(&my_data),
         // );
 
-        let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        // let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
@@ -636,6 +637,14 @@ mod tests {
             211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
             191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
         ];
+        let yoan_hash = {
+            Queue::lock_and_push(Arc::clone(&action_queue), action::Action::SendRoot(None, sock_addr));
+            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            sleep(Duration::from_secs(1)).await;
+            let guard = active_peers.lock().unwrap();
+            let yoan = guard.addr_map.get(&sock_addr).unwrap();
+            yoan.get_root_hash().unwrap()
+        };
 
         fetch_subtree_from(
             Arc::clone(&process_queue),
@@ -643,13 +652,13 @@ mod tests {
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&maps),
-            hash,
+            yoan_hash,
             sock_addr,
         )
         .await;
 
         match maps.lock() {
-            Ok(m) => println!("{:?}", m.2),
+            Ok(m) => println!("{:?}", m),
             _ => (),
         };
     }

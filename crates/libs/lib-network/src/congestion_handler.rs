@@ -5,7 +5,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 
 use futures::Future;
-use tokio::time::Sleep;
+use tokio::time::{Sleep, sleep};
+use std::time::Duration;
 
 // use crate::{peer_data::*, packet};
 use crate::action::*;
@@ -245,7 +246,7 @@ impl std::fmt::Display for CongestionHandlerError {
 
 #[derive(Default)]
 pub struct PendingIds {
-    id_to_addr: HashMap<[u8; 4], SocketAddr>,
+    id_to_addr: HashMap<[u8; 4], (SocketAddr, Sleep, usize, bool)>,
 }
 
 impl PendingIds {
@@ -265,9 +266,14 @@ impl PendingIds {
 
         pending_ids_guard
             .id_to_addr
-            .insert(id.clone(), peer_addr.clone());
+            .insert(*id, (
+                *peer_addr,
+                sleep(Duration::from_secs(1)),
+                0,
+                false
+            ));
     }
-    pub fn id_exists(
+    pub fn id_exists_and_pop(
         pending_ids: Arc<Mutex<PendingIds>>,
         packet: &Packet,
         socket_addr: SocketAddr
@@ -307,6 +313,7 @@ impl PendingIds {
         }
         /*Mutex is dropped here */
     }
+
     /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]) {
         self.id_to_addr.remove(packet_id);
@@ -319,7 +326,7 @@ impl PendingIds {
         let addr = self.id_to_addr.get(packet_id);
 
         match addr {
-            Some(addr) => return Ok(addr.clone()),
+            Some((addr,..)) => return Ok(addr.clone()),
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
     }
