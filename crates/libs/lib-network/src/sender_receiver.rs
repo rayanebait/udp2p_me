@@ -67,7 +67,7 @@ pub async fn sender(sock: Arc<UdpSocket>,
                 },
             };
 
-            PendingIds::lock_and_add_packet_id_raw(Arc::clone(&pending_ids_to_add),
+            PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add),
                                  packet.get_id(), &sock_addr);
             packet.send_to_addr(&sock, &sock_addr).await.unwrap();
             // println!("Sending packet: {:?}\n", packet);

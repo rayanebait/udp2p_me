@@ -651,6 +651,6 @@ mod tests {
         match maps.lock() {
             Ok(m) => println!("{:?}", m),
             _ => (),
-        }
+        };
     }
 }

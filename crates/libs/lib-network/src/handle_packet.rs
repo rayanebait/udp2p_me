@@ -68,42 +68,7 @@ pub fn handle_packet(
     socket_addr: SocketAddr,
     pending_ids: Arc<Mutex<PendingIds>>,
 ) -> Result<Action, HandlingError> {
-    let id_exists = {
-        /*get mutex to check and pop id if it is a response */
-        let mut pending_ids_guard = match pending_ids.lock() {
-            Ok(guard) => guard,
-            /*If Mutex is poisoned stop every thread, something is wrong */
-            Err(poison_error) => panic!("Poisoned Ids Mutex"),
-        };
-
-        /*Check if id exists */
-        match pending_ids_guard.search_id(&packet) {
-            Ok(sock_addr) => {
-                /*if id exists, pop the packet before handling it. */
-                /*We choose to not handle the collisions. */
-                pending_ids_guard.pop_packet_id(packet.get_id());
-
-                /*Now check if the address it was sent to is
-                the same as the address it was received from */
-                let addr_matches_id = {
-                    let addr_match_id;
-
-                    if sock_addr != socket_addr {
-                        addr_match_id = Err(CongestionHandlerError::AddrAndIdDontMatchError);
-                    } else {
-                        addr_match_id = Ok(sock_addr);
-                    }
-                    addr_match_id
-                };
-                addr_matches_id
-            }
-            Err(CongestionHandlerError::NoPacketWithIdError) => {
-                Err(CongestionHandlerError::NoPacketWithIdError)
-            }
-            _ => panic!("Shouldn't happen, handle packet"),
-        }
-        /*Mutex is dropped here */
-    };
+    let id_exists = PendingIds::id_exists(Arc::clone(&pending_ids), &packet, socket_addr);
 
     match id_exists {
         /*Packet is a response */
@@ -215,10 +180,7 @@ fn handle_response_packet(
     match packet.get_packet_type() {
         PacketType::ErrorReply => {
             let error_message = packet.get_body().to_owned();
-            println!(
-                "Received ErrorReply from peer at {}\n",
-                socket_addr
-            );
+            println!("Received ErrorReply from peer at {}\n", socket_addr);
             Ok(Action::ProcessErrorReply(error_message, socket_addr))
         }
         PacketType::HelloReply => {
@@ -277,8 +239,11 @@ fn handle_response_packet(
         }
         PacketType::NatTraversalReply => {
             println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
-            Ok(Action::ProcessNatTraversalReply(packet.get_body().to_owned(), socket_addr))
-        },
+            Ok(Action::ProcessNatTraversalReply(
+                packet.get_body().to_owned(),
+                socket_addr,
+            ))
+        }
         _ => Err(HandlingError::InvalidPacketError),
     }
 }

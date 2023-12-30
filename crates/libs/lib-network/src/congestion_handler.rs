@@ -253,7 +253,7 @@ impl PendingIds {
         Arc::new(Mutex::new(PendingIds::default()))
     }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
-    pub fn lock_and_add_packet_id_raw(
+    pub fn lock_and_add_id(
         pending_ids: Arc<Mutex<PendingIds>>,
         id: &[u8; 4],
         peer_addr: &SocketAddr,
@@ -267,7 +267,46 @@ impl PendingIds {
             .id_to_addr
             .insert(id.clone(), peer_addr.clone());
     }
+    pub fn id_exists(
+        pending_ids: Arc<Mutex<PendingIds>>,
+        packet: &Packet,
+        socket_addr: SocketAddr
+    )->Result<SocketAddr, CongestionHandlerError>{
+        /*get mutex to check and pop id if it is a response */
+        let mut pending_ids_guard = match pending_ids.lock() {
+            Ok(guard) => guard,
+            /*If Mutex is poisoned stop every thread, something is wrong */
+            Err(poison_error) => panic!("Poisoned Ids Mutex"),
+        };
 
+        /*Check if id exists */
+        match pending_ids_guard.search_id(&packet) {
+            Ok(sock_addr) => {
+                /*if id exists, pop the packet before handling it. */
+                /*We choose to not handle the collisions. */
+                pending_ids_guard.pop_packet_id(packet.get_id());
+
+                /*Now check if the address it was sent to is
+                the same as the address it was received from */
+                let addr_matches_id = {
+                    let addr_match_id;
+
+                    if sock_addr != socket_addr {
+                        addr_match_id = Err(CongestionHandlerError::AddrAndIdDontMatchError);
+                    } else {
+                        addr_match_id = Ok(sock_addr);
+                    }
+                    addr_match_id
+                };
+                addr_matches_id
+            }
+            Err(CongestionHandlerError::NoPacketWithIdError) => {
+                Err(CongestionHandlerError::NoPacketWithIdError)
+            }
+            _ => panic!("Shouldn't happen, handle packet"),
+        }
+        /*Mutex is dropped here */
+    }
     /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]) {
         self.id_to_addr.remove(packet_id);
