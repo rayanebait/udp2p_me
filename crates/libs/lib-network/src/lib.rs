@@ -487,7 +487,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_tree() {
-        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let maps = build_tree_mutex();
