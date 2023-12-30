@@ -10,14 +10,12 @@ pub fn build_tree_mutex() -> Arc<
         HashMap<[u8; 32], [u8; 32]>,
         HashMap<[u8; 32], Vec<[u8; 32]>>,
         HashMap<[u8; 32], String>,
-        HashMap<String, Vec<[u8; 32]>>,
     )>,
 > {
     Arc::new(Mutex::new((
         HashMap::<[u8; 32], [u8; 32]>::new(),
         HashMap::<[u8; 32], Vec<[u8; 32]>>::new(),
         HashMap::<[u8; 32], String>::new(),
-        HashMap::<String, Vec<[u8; 32]>>::new(),
     )))
 }
 pub fn build_tree_maps(
@@ -27,7 +25,6 @@ pub fn build_tree_maps(
             HashMap<[u8; 32], [u8; 32]>,
             HashMap<[u8; 32], Vec<[u8; 32]>>,
             HashMap<[u8; 32], String>,
-            HashMap<String, Vec<[u8; 32]>>,
         )>,
     >,
 ) -> Result<Option<Vec<[u8; 32]>>, PeerError> {
@@ -49,12 +46,12 @@ pub fn build_tree_maps(
     get_hash_to_name_hashmap(action, &mut guard.2, &child_to_parent_map)?;
 
     let hash_to_name_map = (guard.2).clone();
-    get_name_to_hash_hashmap(
-        action,
-        &mut guard.3,
-        &child_to_parent_map,
-        &hash_to_name_map,
-    )?;
+    // get_name_to_hash_hashmap(
+    //     action,
+    //     &mut guard.3,
+    //     &child_to_parent_map,
+    //     &hash_to_name_map,
+    // )?;
 
     Ok(childs)
 }
@@ -189,47 +186,15 @@ pub fn get_hash_to_name_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             hash.copy_from_slice(temp);
-            // If no parent is found then it is the root
-            let mut parent_name = match c_to_p_hashmap.get(&hash) {
-                Some(p) => match h_to_n_hashmap.get(p) {
-                    Some(n) => {
-                        println!("FOUND PARENT NAME");
-                        n.to_string()
-                    }
-                    None => {
-                        println!("FAILED TO FIND PARENT NAME");
-                        "/".to_string()
-                    }
-                },
-                None => "/".to_string(),
-            };
-            let mut temp_parent_name = parent_name.clone();
-            match temp_parent_name.chars().last() {
-                Some('/') => (),
-                _ => temp_parent_name.push_str("/"),
-            };
-            println!("PARENT NAME = {}", &temp_parent_name);
             match data_type {
                 0 => {}
-                1 => {
-                    let data = match data.get(33..) {
-                        Some(d) => d,
-                        None => return (Err(PeerError::InvalidPacket)),
-                    };
-                    let leaves = data.chunks(32).map(|s| s.to_owned());
-                    for leaf in leaves {
-                        let mut leaf_slice = [0u8; 32];
-                        leaf_slice.copy_from_slice(&leaf);
-                        h_to_n_hashmap.insert(leaf_slice, parent_name.clone());
-                    }
-                }
+                1 => {}
                 2 => {
                     let data = match data.get(33..) {
                         Some(d) => d,
                         None => return (Err(PeerError::InvalidPacket)),
                     };
                     let leaves = data.chunks(64).map(|s| s.to_owned());
-                    println!("##############");
                     for leaf in leaves {
                         let name = match leaf.get(0..32) {
                             Some(d) => d,
@@ -238,10 +203,6 @@ pub fn get_hash_to_name_hashmap(
                         let mut name = name.to_vec();
                         name.retain(|&x| x != 0u8);
                         let name = String::from_utf8(name).unwrap();
-                        let mut temp_name = temp_parent_name.clone();
-                        temp_name.push_str(&name);
-                        let name = temp_name;
-                        println!("CHILD NAME = {}", &name);
                         let leaf = match leaf.get(32..) {
                             Some(d) => d,
                             None => return (Err(PeerError::InvalidPacket)),
@@ -265,111 +226,44 @@ pub fn get_hash_to_name_hashmap(
     return Ok(());
 }
 
-pub fn get_name_to_hash_hashmap(
-    action: &Action,
-    n_to_h_hashmap: &mut HashMap<String, Vec<[u8; 32]>>,
-    c_to_p_hashmap: &HashMap<[u8; 32], [u8; 32]>,
+pub fn get_full_name(
+    hash: &[u8; 32],
     h_to_n_hashmap: &HashMap<[u8; 32], String>,
-) -> Result<(), PeerError> {
-    let action = action.clone();
-    match action {
-        Action::ProcessDatum(data, address) => {
-            let data_type = match data.get(32) {
-                Some(d) => d.to_owned(),
-                None => return (Err(PeerError::InvalidPacket)),
+    c_to_p_hashmap: &HashMap<[u8; 32], [u8; 32]>,
+) -> String {
+    let mut name = String::new();
+    match c_to_p_hashmap.get(hash) {
+        Some(h) => {
+            let child_name = match h_to_n_hashmap.get(hash) {
+                Some(n) => n.to_string(),
+                None => {
+                    // This hash has no name, it is probably part of a tree, get the first node of tree to get the name
+                    "".to_string()
+                }
             };
-            let mut hash = [0u8; 32];
-            let temp = match data.get(0..32) {
-                Some(d) => d,
-                None => return (Err(PeerError::InvalidPacket)),
-            };
-            hash.copy_from_slice(temp);
-            let parent_hash = c_to_p_hashmap.get(&hash);
-            let parent_name: String = match parent_hash {
-                Some(h) => match h_to_n_hashmap.get(h) {
-                    Some(t) => t,
-                    None => "/",
-                },
-                None => "/",
+            let mut parent_name = get_full_name(h, h_to_n_hashmap, c_to_p_hashmap);
+            if parent_name.chars().last() != Some('/') && child_name != "" {
+                parent_name.push('/');
             }
-            .to_string();
-            let mut temp_parent_name = parent_name.clone();
-            match temp_parent_name.chars().last() {
-                Some('/') => (),
-                _ => temp_parent_name.push_str("/"),
-            };
-            match data_type {
-                0 => {}
-                1 => {
-                    let data = match data.get(33..) {
-                        Some(d) => d,
-                        None => return (Err(PeerError::InvalidPacket)),
-                    };
-                    let leaves = data.chunks(32).map(|s| s.to_owned());
-                    // check if there is already an entry with this key
-                    let result = match n_to_h_hashmap.get(&parent_name) {
-                        Some(c) => Some(c.clone()),
-                        None => None,
-                    };
-                    match result {
-                        Some(mut ids) => {
-                            for leaf in leaves {
-                                let mut leaf_slice = [0u8; 32];
-                                leaf_slice.copy_from_slice(&leaf);
-                                ids.push(leaf_slice.clone());
-                            }
-                            n_to_h_hashmap.insert(parent_name, ids);
-                        }
-                        None => {
-                            let ids: Vec<[u8; 32]> = leaves
-                                .map(|leaf| {
-                                    let mut leaf_slice = [0u8; 32];
-                                    leaf_slice.copy_from_slice(&leaf);
-                                    leaf_slice
-                                })
-                                .collect();
-                            n_to_h_hashmap.insert(parent_name, ids);
-                        }
-                    }
-                }
-                2 => {
-                    let data = match data.get(33..) {
-                        Some(d) => d,
-                        None => return (Err(PeerError::InvalidPacket)),
-                    };
-                    let leaves = data.chunks(64).map(|s| s.to_owned());
-                    for leaf in leaves {
-                        let name = match leaf.get(0..32) {
-                            Some(d) => d,
-                            None => return (Err(PeerError::InvalidPacket)),
-                        };
-                        let mut name = name.to_vec();
-                        name.retain(|&x| x != 0u8);
-                        let name = String::from_utf8(name).unwrap();
-                        let mut temp_name = temp_parent_name.clone();
-                        temp_name.push_str(&name);
-                        let name = temp_name;
-                        let leaf = match leaf.get(32..) {
-                            Some(d) => d,
-                            None => return (Err(PeerError::InvalidPacket)),
-                        };
-                        let mut leaf_slice = [0u8; 32];
-                        leaf_slice.copy_from_slice(&leaf);
-                        n_to_h_hashmap.insert(name, vec![leaf_slice]);
-                    }
-                }
-                _ => {
-                    println!("Not a mkfs node");
-                    return (Err(PeerError::InvalidPacket));
-                }
-            }
+            name.push_str(&parent_name);
+            name.push_str(&child_name);
         }
-        _ => {
-            println!("Not the datum we are looking for");
-            return (Err(PeerError::InvalidPacket));
+        None => {
+            return ("/".to_string());
         }
     }
-    return Ok(());
+    return (name);
+}
+
+pub fn get_name_to_hash_hashmap(
+    c_to_p_hashmap: &HashMap<[u8; 32], [u8; 32]>,
+    h_to_n_hashmap: &HashMap<[u8; 32], String>,
+) -> HashMap<String, [u8; 32]> {
+    let mut n_to_h_hashmap = HashMap::<String, [u8; 32]>::new();
+    for (c, p) in c_to_p_hashmap.into_iter() {
+        n_to_h_hashmap.insert(get_full_name(c, h_to_n_hashmap, c_to_p_hashmap), c.clone());
+    }
+    return (n_to_h_hashmap);
 }
 
 #[cfg(test)]
@@ -441,27 +335,27 @@ pub mod test {
         // println!("{:?}", h_to_n_hashmap);
     }
 
-    #[test]
-    fn lib_network_store_get_name_to_hash_hashmap() {
-        let address = "127.0.0.1:8080".parse::<SocketAddr>().unwrap();
-        let data = vec![
-            1, 2, 3, 4, 5, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 2, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 72, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
+    // #[test]
+    // fn lib_network_store_get_name_to_hash_hashmap() {
+    //     let address = "127.0.0.1:8080".parse::<SocketAddr>().unwrap();
+    //     let data = vec![
+    //         1, 2, 3, 4, 5, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 2, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 0, 0, 0, 0, 69, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 72, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    //     ];
 
-        let action = Action::ProcessDatum(data, address);
-        // let mut c_to_p_hashmap =Arc::new(Mutex::new( HashMap::<[u8; 32], [u8; 32]>::new()));
-        // get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
-        // let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
-        // get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
-        // let mut n_to_h_hashmap = HashMap::<String, Vec<[u8; 32]>>::new();
-        // get_name_to_hash_hashmap(&action, &mut n_to_h_hashmap, c_to_p_hashmap, h_to_n_hashmap);
-        // println!("{n_to_h_hashmap:?}");
-    }
+    //     let action = Action::ProcessDatum(data, address);
+    //     // let mut c_to_p_hashmap =Arc::new(Mutex::new( HashMap::<[u8; 32], [u8; 32]>::new()));
+    //     // get_child_to_parent_hashmap(&action, Arc::clone(&c_to_p_hashmap));
+    //     // let mut h_to_n_hashmap = HashMap::<[u8; 32], String>::new();
+    //     // get_hash_to_name_hashmap(&action, &mut h_to_n_hashmap, &c_to_p_hashmap);
+    //     // let mut n_to_h_hashmap = HashMap::<String, Vec<[u8; 32]>>::new();
+    //     // get_name_to_hash_hashmap(&action, &mut n_to_h_hashmap, c_to_p_hashmap, h_to_n_hashmap);
+    //     // println!("{n_to_h_hashmap:?}");
+    // }
 }

@@ -358,7 +358,6 @@ pub async fn fetch_subtree_from(
             HashMap<[u8; 32], [u8; 32]>,
             HashMap<[u8; 32], Vec<[u8; 32]>>,
             HashMap<[u8; 32], String>,
-            HashMap<String, Vec<[u8; 32]>>,
         )>,
     >,
     hash: [u8; 32],
