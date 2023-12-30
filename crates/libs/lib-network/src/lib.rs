@@ -169,7 +169,6 @@ mod tests {
         time::{sleep, Duration},
     };
 
-    use crate::{congestion_handler::build_queues, store::build_tree_mutex};
     use crate::congestion_handler::Queue;
     use crate::handle_action::*;
     use crate::handle_packet::handle_packet_task;
@@ -177,6 +176,7 @@ mod tests {
     use crate::peer::peer::*;
     use crate::process::*;
     use crate::sender_receiver::*;
+    use crate::{congestion_handler::build_queues, store::build_tree_mutex};
 
     use lib_file::mk_fs::{self, MktFsNode};
     // #[test]
@@ -562,10 +562,12 @@ mod tests {
         //     Arc::clone(&my_data),
         // );
 
-        
         let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
         {
-            Queue::lock_and_push(Arc::clone(&action_queue), action::Action::SendHello(None, vec![97,110,105,116], *&sock_addr));
+            Queue::lock_and_push(
+                Arc::clone(&action_queue),
+                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+            );
         }
         sleep(Duration::from_secs(1)).await;
         // let hash : [u8;32] = {
@@ -573,7 +575,10 @@ mod tests {
         //     let peer = peers.addr_map.get(&sock_addr).unwrap();
         //     peer.get_root_hash().unwrap()
         // };
-        let hash = [0u8;32];
+        let hash = [
+            101, 88, 111, 105, 45, 123, 97, 83, 156, 120, 190, 239, 167, 101, 140, 86, 93, 80, 135,
+            98, 121, 174, 241, 21, 31, 80, 133, 22, 36, 90, 3, 246,
+        ];
 
         let fetching = fetch_subtree_from(
             Arc::clone(&process_queue),
@@ -582,7 +587,8 @@ mod tests {
             Arc::clone(&action_queue_state),
             Arc::clone(&maps),
             hash,
-            sock_addr);
+            sock_addr,
+        );
 
         join!(
             receiving,
