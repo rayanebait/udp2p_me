@@ -404,6 +404,7 @@ pub async fn fetch_subtree_from(
         Some(childs) => {
             // let mut hash_vec = vec![];
             for child_hash in childs {
+                println!("push child");
                 subtasks.push(fetch_subtree_from(
                     Arc::clone(&peek_process_queue),
                     Arc::clone(&process_queue_readers_state),
@@ -418,7 +419,10 @@ pub async fn fetch_subtree_from(
 
             // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
         }
-        None => return Ok(()),
+        None =>{
+            println!("no childs");
+            return Ok(())
+        }
     };
     let completed = join_all(subtasks).await;
     for result in completed {
