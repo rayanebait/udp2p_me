@@ -177,6 +177,8 @@ mod tests {
     use crate::process::*;
     use crate::sender_receiver::*;
     use crate::{congestion_handler::build_queues, store::build_tree_mutex};
+    use crate::{congestion_handler::Queue, store::get_full_name};
+    use crate::{handle_action::*, store::get_name_to_hash_hashmap};
 
     use lib_file::mk_fs::{self, MktFsNode};
     // #[test]
@@ -657,8 +659,16 @@ mod tests {
         )
         .await;
 
+        let child_hash: [u8; 32] = [
+            115, 50, 75, 0, 182, 12, 186, 29, 161, 254, 249, 93, 93, 212, 161, 125, 206, 44, 148,
+            135, 173, 127, 64, 161, 49, 67, 77, 10, 174, 213, 70, 250,
+        ];
+
         match maps.lock() {
-            Ok(m) => println!("{:?}", m),
+            Ok(m) => {
+                println!("Name = {}", get_full_name(&child_hash, &m.2, &m.0));
+                println!("{:?}", get_name_to_hash_hashmap(&m.0, &m.2));
+            }
             _ => (),
         };
     }
