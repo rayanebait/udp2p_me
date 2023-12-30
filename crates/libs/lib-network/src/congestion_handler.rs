@@ -5,8 +5,8 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 
 use futures::Future;
-use tokio::time::{Sleep, sleep};
 use std::time::Duration;
+use tokio::time::{sleep, Sleep};
 
 // use crate::{peer_data::*, packet};
 use crate::action::*;
@@ -97,7 +97,7 @@ impl<T: Clone> Queue<T> {
     fn build_mutex() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             data: VecDeque::new(),
-            can_pop:true,
+            can_pop: true,
         }))
     }
     fn build_rwlock() -> Arc<RwLock<Self>> {
@@ -115,7 +115,7 @@ impl<T: Clone> Queue<T> {
         queue_guard.peek_front()
     }
     /*For privileged reader */
-    pub fn write_lock_and_get(queue: Arc<RwLock<Queue<T>>>)->Option<T>{
+    pub fn write_lock_and_get(queue: Arc<RwLock<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.write() {
             Ok(queue_gard) => queue_gard,
             Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
@@ -131,12 +131,12 @@ impl<T: Clone> Queue<T> {
             Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
         };
 
-        /*Only the pusher can pop the data, 
+        /*Only the pusher can pop the data,
         some privileged reader can set can_pop to true */
         if queue_guard.can_pop {
             queue_guard.pop_front();
             queue_guard.push_back(data);
-        }else {
+        } else {
             queue_guard.push_back(data);
         }
     }
@@ -246,18 +246,49 @@ impl std::fmt::Display for CongestionHandlerError {
 
 #[derive(Default)]
 pub struct PendingIds {
-    id_to_addr: HashMap<[u8; 4], (SocketAddr, Sleep, usize, bool)>,
+    id_to_addr: HashMap<
+        [u8; 4],
+        (
+            /*addr to which it was sent */
+            SocketAddr,
+            /*timeout timer */
+            Sleep,
+            /*Resending attempts */
+            usize,
+            /*Attempted NatTraversal */
+            bool,
+            /*Has been answered, can pop now*/
+            bool,
+        ),
+    >,
 }
 
 impl PendingIds {
     pub fn build_mutex() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(PendingIds::default()))
     }
-    pub fn launch_flusher_task(
-        pending_ids: Arc<Mutex<PendingIds>>
-    ){
+    pub fn launch_flusher_task(pending_ids: Arc<Mutex<PendingIds>>) {
         tokio::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(1)).await;
+                let mut guard = match pending_ids.lock() {
+                    Ok(guard) => guard,
+                    Err(poison_error) => break,
+                };
 
+                let mut to_pop = vec![];
+
+                for id in guard.id_to_addr.keys() {
+                    let (_, _, attempts, attempted_nat_trav, can_pop_key) =
+                        guard.id_to_addr.get(id).unwrap();
+                    if (*can_pop_key == false) && (*attempted_nat_trav == true) {
+                        to_pop.push(*id);
+                    }
+                }
+                for id in to_pop {
+                    guard.pop_packet_id(&id);
+                }
+            }
         });
     }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
@@ -271,14 +302,10 @@ impl PendingIds {
             Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
         };
 
-        pending_ids_guard
-            .id_to_addr
-            .insert(*id, (
-                *peer_addr,
-                sleep(Duration::from_secs(1)),
-                0,
-                false
-            ));
+        pending_ids_guard.id_to_addr.insert(
+            *id,
+            (*peer_addr, sleep(Duration::from_secs(1)), 0, false, false),
+        );
     }
 
     /*Searches for an Id and sets it's can_pop status to true.
@@ -287,8 +314,8 @@ impl PendingIds {
     pub fn id_exists_and_pop(
         pending_ids: Arc<Mutex<PendingIds>>,
         packet: &Packet,
-        socket_addr: SocketAddr
-    )->Result<SocketAddr, CongestionHandlerError>{
+        socket_addr: SocketAddr,
+    ) -> Result<SocketAddr, CongestionHandlerError> {
         /*get mutex to check and pop id if it is a response */
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,
@@ -301,7 +328,7 @@ impl PendingIds {
             Ok(sock_addr) => {
                 /*if id exists, pop the packet before handling it. */
                 /*We choose to not handle the collisions. */
-                pending_ids_guard.pop_packet_id(packet.get_id());
+                pending_ids_guard.set_can_pop(packet.get_id());
 
                 /*Now check if the address it was sent to is
                 the same as the address it was received from */
@@ -325,6 +352,10 @@ impl PendingIds {
         /*Mutex is dropped here */
     }
 
+    pub fn set_can_pop(&mut self, packet_id: &[u8; 4]){
+        let (_,_,_,_,mut can_pop) = self.id_to_addr.get_mut(packet_id).unwrap();
+        can_pop = true;
+    }
     /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]) {
         self.id_to_addr.remove(packet_id);
@@ -337,7 +368,7 @@ impl PendingIds {
         let addr = self.id_to_addr.get(packet_id);
 
         match addr {
-            Some((addr,..)) => return Ok(addr.clone()),
+            Some((addr, ..)) => return Ok(addr.clone()),
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
     }

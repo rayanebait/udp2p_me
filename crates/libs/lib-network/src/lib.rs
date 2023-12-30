@@ -14,35 +14,352 @@ pub mod import_export {
         prelude::*,
         std::{
             default,
-            future::IntoFuture,
             /*Multi task*/
-            sync::{Arc, Mutex},
+            sync::{RwLock, Arc, Mutex},
             net::SocketAddr,
         },
 
-        /*Utilities */
-        anyhow::{bail, Context, Result},
-        log::{debug, error, info, warn},
 
-        /*Async/net libraries */
-        futures::stream::FuturesUnordered,
-        futures::{select, Future, StreamExt},
+        futures::{
+            future::join_all,
+            stream::FuturesUnordered,
+            Future,
+        },
         tokio::{
-            net::UdpSocket,
-            test,
+            join,
+            select,
+            task::{JoinError, JoinHandle},
+            time::{sleep, Sleep},
         },
 
         crate::{
             congestion_handler::*,
             handle_packet::*,
             packet::*,
+            action::Action,
+            peer::peer::*,
+            store::*,
         },
     };
 
-    pub enum Error {
-        Packet(PacketError),
-        // Peer(PeerError),
+    /*Sends Hello then peeks the process queue to check for a helloreply, if no
+    helloreply in 3 seconds, sends hello again, repeats 3 times.
+
+    */
+    pub async fn register(
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_state: Arc<QueueState>,
+        process_queue_readers_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        my_data: Arc<Peer>,
+    ) {
+        let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+
+        for attempt in 0..10 {
+            Queue::lock_and_push(
+                Arc::clone(&action_queue),
+                Action::SendHello(None, my_data.get_name().unwrap(), server_sock_addr),
+            );
+            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            println!("attempt : {}", attempt);
+
+            match peek_until_hello_reply_from(
+                Arc::clone(&peek_process_queue),
+                Arc::clone(&process_queue_state),
+                Arc::clone(&process_queue_readers_state),
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                server_sock_addr,
+            )
+            .await
+            {
+                Ok(_) => {
+                    keep_alive_to_peer(
+                        Arc::clone(&action_queue),
+                        Arc::clone(&action_queue_state),
+                        *&server_sock_addr,
+                    );
+                    break;
+                }
+                Err(_) => continue,
+            }
+        }
+        println!("here")
     }
+
+    pub fn keep_alive_to_peer(
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        sock_addr: SocketAddr,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                std::thread::sleep(Duration::from_secs(5));
+                Queue::lock_and_push(
+                    Arc::clone(&action_queue),
+                    Action::SendHello(None, vec![97, 110, 105, 116], sock_addr),
+                );
+                QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+            }
+        });
+    }
+
+    pub async fn peek_until_hello_reply_from(
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_state: Arc<QueueState>,
+        process_queue_readers_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        sock_addr: SocketAddr,
+    ) -> Result<Action, PeerError> {
+        /*Repeatedly peeks process queue to check  */
+        let task_handle = tokio::spawn(async move {
+            loop {
+                /*Wait notify all from receive task */
+                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                    Some(front) => front,
+                    None => {
+                        process_queue_readers_state.wait();
+                        continue;
+                    }
+                };
+                match front {
+                    Action::ProcessHelloReply(.., addr) => {
+                        if addr == sock_addr {
+                            break Ok::<Action, PeerError>(front);
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+        });
+        let abort_task_handle = task_handle.abort_handle();
+
+        let timeout_handle = tokio::spawn(async move {
+            let timeout = sleep(Duration::from_secs(3)).await;
+            if abort_task_handle.is_finished() {
+                /*Never happens */
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            } else {
+                abort_task_handle.abort();
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            }
+        });
+        /* Return when either response time out or received a packet
+        corresponding */
+        select!{
+            timed_out = timeout_handle => {
+                match timed_out {
+                    Ok(result)=> match result {
+                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+            action = task_handle => {
+                match action {
+                    Ok(result)=> match result {
+                        Ok(action)=> return Ok(action),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+        };
+    }
+
+    #[async_recursion::async_recursion]
+    pub async fn fetch_subtree_from(
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_readers_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        maps: Arc<
+            Mutex<(
+                HashMap<[u8; 32], [u8; 32]>,
+                HashMap<[u8; 32], Vec<[u8; 32]>>,
+                HashMap<[u8; 32], String>,
+            )>,
+        >,
+        hash: [u8; 32],
+        sock_addr: SocketAddr,
+    ) -> Result<(), PeerError> {
+        let mut subtasks = vec![];
+        let children: Option<Vec<[u8; 32]>>;
+
+        Queue::lock_and_push(
+            Arc::clone(&action_queue),
+            Action::SendGetDatumWithHash(*&hash, *&sock_addr),
+        );
+        QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+
+        match peek_until_datum_with_hash_from(
+            Arc::clone(&peek_process_queue),
+            Arc::clone(&process_queue_readers_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            *&hash,
+            *&sock_addr,
+        )
+        .await
+        {
+            Ok(datum_action) => {
+                children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
+                    Ok(childs) => match childs {
+                        Some(childs) => Some(childs),
+                        None => None,
+                    },
+                    Err(PeerError::InvalidPacket) => return Err(PeerError::InvalidPacket),
+                    _ => panic!("Shouldn't happen"),
+                };
+            }
+            Err(PeerError::ResponseTimeout) => {
+                return Err(PeerError::ResponseTimeout);
+                // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
+            }
+            _ => todo!(),
+        };
+        match children {
+            Some(childs) => {
+                // let mut hash_vec = vec![];
+                for child_hash in childs {
+                    println!("Asking for child {:?}", &child_hash);
+                    subtasks.push(fetch_subtree_from(
+                        Arc::clone(&peek_process_queue),
+                        Arc::clone(&process_queue_readers_state),
+                        Arc::clone(&action_queue),
+                        Arc::clone(&action_queue_state),
+                        Arc::clone(&maps),
+                        child_hash,
+                        sock_addr,
+                    ));
+                    // hash_vec.push(Action::SendGetDatumWithHash(child_hash, sock_addr));
+                }
+
+                // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
+            }
+            None => {
+                println!("no childs");
+                return Ok(());
+            }
+        };
+        let completed = join_all(subtasks).await;
+        for result in completed {
+            match result {
+                Ok(()) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
+    /*Given a hash it downloads all files under it  */
+    pub async fn download(
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        active_peers: Arc<Mutex<ActivePeers>>,
+        hash: [u8; 32],
+        sock_addr: SocketAddr,
+    ) {
+        /*Peer has to have been handshaked before */
+        /*Constructs the whole tree structure without storing it */
+        // let hash_trees_or_error = fetch_subtree_from(
+        //     Arc::clone(&peek_process_queue),
+        //     Arc::clone(&process_queue_state),
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&active_peers),
+        //     hash,
+        //     sock_addr,
+        // )
+        // .await;
+
+        // let (parent_to_child_map, child_to_parent_map) = match hash_trees_or_error {
+        //     Ok(hash_trees)=> hash_trees,
+        //     Err(PeerError::ResponseTimeout)=> todo!(),
+        //     _=>todo!(),
+        // };
+    }
+
+    pub async fn peek_until_datum_with_hash_from(
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_readers_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        hash: [u8; 32],
+        sock_addr: SocketAddr,
+    ) -> Result<Action, PeerError> {
+        /*Spawns a task that peeks the process queue waiting for a packet
+        from the given address with the given peer. */
+        let task_handle = tokio::spawn(async move {
+            loop {
+                /*Wait notify all from receive task */
+                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                    Some(front) => front,
+                    None => {
+                        process_queue_readers_state.wait();
+                        continue;
+                    }
+                };
+                match front {
+                    Action::ProcessDatum(datum, addr) => {
+                        let mut datum_hash = [0u8; 32];
+                        datum_hash.copy_from_slice(&datum.as_slice()[0..32]);
+                        if (addr == sock_addr) && (datum_hash == hash) {
+                            break Ok::<Action, PeerError>(Action::ProcessDatum(datum, addr));
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                }
+            }
+        });
+        /*Handle that can be sent to a task and used to abort a given task. */
+        let abort_task_handle = task_handle.abort_handle();
+
+        /*Sleeps for the given duration then aborts the given task. */
+        let timeout_handle = tokio::spawn(async move {
+            let timeout = sleep(Duration::from_secs(3)).await;
+            if abort_task_handle.is_finished() {
+                /*Never happens */
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            } else {
+                abort_task_handle.abort();
+                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+            }
+        });
+        /* Return when either response time out or received a packet
+        corresponding */
+        select! {
+            timed_out = timeout_handle => {
+                match timed_out {
+                    Ok(result)=> match result {
+                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+            action = task_handle => {
+                match action {
+                    Ok(result)=> match result {
+                        Ok(action)=> return Ok(action),
+                        _=>panic!("Shouldn't happen"),
+                    },
+                    Err(_)=> panic!("time out task panicked"),
+                }
+            }
+        };
+    }
+    
 
 }
 
@@ -72,18 +389,13 @@ mod tests {
             handle_packet::handle_packet_task,
             packet::*,
             peer::peer::*,
-            process::*,
+            process::process_task,
             sender_receiver::*,
             store::*,
         },
 
         lib_file::mk_fs::{self, MktFsNode},
     };
-    // #[test]
-    // fn it_works() {
-    //     let result = add(2, 2);
-    //     assert_eq!(result, 4);
-    // }
     #[tokio::test]
     async fn packet_bytes_conversion() {
         let mut rng = BufferedRng::new(WyRand::new());
@@ -105,6 +417,7 @@ mod tests {
         println!("{:?}\n{:?}", raw_packet, packet);
         println!("{:?}\n{:?}", raw_hello_packet, hello_packet);
     }
+
     #[tokio::test]
     async fn handshake_with_pi() {
         let packet = PacketBuilder::noop_packet();
@@ -124,172 +437,6 @@ mod tests {
         sleep(Duration::from_millis(500));
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 5)]
-    async fn register_to_server() {
-        /*0 lets the os assign the port. The port is
-        then accessible with the local_addr method */
-        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
-        let (
-            receive_queue,
-            send_queue,
-            action_queue,
-            process_queue,
-            pending_ids,
-            receive_queue_state,
-            action_queue_state,
-            send_queue_state,
-            process_queue_state,
-            process_queue_readers_state,
-        ) = build_queues();
-
-        let active_peers = ActivePeers::build_mutex();
-
-        let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
-        let my_data = Arc::new(my_data.clone());
-        {
-            let packet = PacketBuilder::noop_packet();
-            let sock_addr = "176.169.27.221:9157".parse().unwrap();
-            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
-            let packet = PacketBuilder::noop_packet();
-            let sock_addr2 = "176.169.27.221:37086".parse().unwrap();
-            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr2))
-        }
-        /*Do a launch tasks func ? */
-        let f1 = receiver(
-            Arc::clone(&sock),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-        );
-
-        let f2 = handle_packet_task(
-            Arc::clone(&pending_ids),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&process_queue_readers_state),
-        );
-        let f3 = handle_action_task(
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-        );
-        // let f4 = process_task(
-        //     Arc::clone(&action_queue),
-        //     Arc::clone(&action_queue_state),
-        //     Arc::clone(&process_queue),
-        //     Arc::clone(&process_queue_state),
-        //     Arc::clone(&active_peers),
-        //     Arc::clone(&my_data),
-        //     Arc::clone()
-        // );
-
-        let f5 = sender(
-            Arc::clone(&sock),
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&pending_ids),
-        );
-
-        // let metrics = Handle::current().metrics();
-        // let n = metrics.active_tasks_count();
-        // println!("Runtime has {} active tasks", n);
-
-        join!(
-            f1, f2, f3, //  f4,
-            f5
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
-    async fn register_to_server2() {
-        /*0 lets the os assign the port. The port is
-        then accessible with the local_addr method */
-        // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
-
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
-        let (
-            receive_queue,
-            send_queue,
-            action_queue,
-            process_queue,
-            pending_ids,
-            receive_queue_state,
-            action_queue_state,
-            send_queue_state,
-            process_queue_state,
-            process_queue_readers_state,
-        ) = build_queues();
-
-        let active_peers = ActivePeers::build_mutex();
-
-        let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
-        let my_data = Arc::new(my_data.clone());
-
-        let receiving = receiver(
-            Arc::clone(&sock),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-        );
-
-        let handling = handle_packet_task(
-            Arc::clone(&pending_ids),
-            Arc::clone(&receive_queue),
-            Arc::clone(&receive_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&process_queue_readers_state),
-        );
-        let processing_two = handle_action_task(
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-        );
-        let processing_one = process_task(
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&active_peers),
-            Arc::clone(&my_data),
-        );
-
-        let sending = sender(
-            Arc::clone(&sock),
-            Arc::clone(&send_queue),
-            Arc::clone(&send_queue_state),
-            Arc::clone(&pending_ids),
-        );
-
-        // let metrics = Handle::current().metrics();
-        // let n = metrics.active_tasks_count();
-        // println!("Runtime has {} active tasks", n);
-        let registering = register(
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
-            Arc::clone(&process_queue_readers_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&my_data),
-        );
-
-        join!(
-            receiving,
-            handling,
-            processing_one,
-            processing_two,
-            sending,
-            registering
-        );
-    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn register_and_export() {
