@@ -351,7 +351,7 @@ pub async fn peek_until_hello_reply_from(
 #[async_recursion::async_recursion]
 pub async fn fetch_subtree_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
-    process_queue_state: Arc<QueueState>,
+    process_queue_readers_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     maps: Arc<
@@ -373,10 +373,10 @@ pub async fn fetch_subtree_from(
         Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
     );
     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-
+    
     match peek_until_datum_with_hash_from(
         Arc::clone(&peek_process_queue),
-        Arc::clone(&process_queue_state),
+        Arc::clone(&process_queue_readers_state),
         Arc::clone(&action_queue),
         Arc::clone(&action_queue_state),
         *&hash,
@@ -402,17 +402,21 @@ pub async fn fetch_subtree_from(
     };
     match children {
         Some(childs) => {
+            // let mut hash_vec = vec![];
             for child_hash in childs {
                 subtasks.push(fetch_subtree_from(
                     Arc::clone(&peek_process_queue),
-                    Arc::clone(&process_queue_state),
+                    Arc::clone(&process_queue_readers_state),
                     Arc::clone(&action_queue),
                     Arc::clone(&action_queue_state),
                     Arc::clone(&maps),
                     child_hash,
                     sock_addr,
                 ));
+                // hash_vec.push(Action::SendGetDatumWithHash(child_hash, sock_addr));
             }
+
+            // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
         }
         None => return Ok(()),
     };

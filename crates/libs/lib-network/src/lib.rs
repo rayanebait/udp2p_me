@@ -582,7 +582,7 @@ mod tests {
 
         let fetching = fetch_subtree_from(
             Arc::clone(&process_queue),
-            Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&maps),
