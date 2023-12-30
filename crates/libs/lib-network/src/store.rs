@@ -70,11 +70,11 @@ pub fn get_child_to_parent_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             let mut hash = [0u8; 32];
-            let data = match data.get(0..32) {
+            let temp = match data.get(0..32) {
                 Some(d) => d,
                 None => return (Err(PeerError::InvalidPacket)),
             };
-            hash.copy_from_slice(data);
+            hash.copy_from_slice(temp);
             match data_type {
                 0 => {}
                 1 => {
@@ -128,11 +128,11 @@ pub fn get_parent_to_child_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             let mut hash = [0u8; 32];
-            let data = match data.get(0..32) {
+            let temp = match data.get(0..32) {
                 Some(d) => d,
                 None => return (Err(PeerError::InvalidPacket)),
             };
-            hash.copy_from_slice(data);
+            hash.copy_from_slice(temp);
             match data_type {
                 0 => Ok(None),
                 1 => Ok(None),
@@ -184,11 +184,11 @@ pub fn get_hash_to_name_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             let mut hash = [0u8; 32];
-            let data = match data.get(0..32) {
+            let temp = match data.get(0..32) {
                 Some(d) => d,
                 None => return (Err(PeerError::InvalidPacket)),
             };
-            hash.copy_from_slice(data);
+            hash.copy_from_slice(temp);
             // If no parent is found then it is the root
             let mut parent_name: String = match c_to_p_hashmap.get(&hash) {
                 Some(p) => h_to_n_hashmap
@@ -269,11 +269,11 @@ pub fn get_name_to_hash_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             let mut hash = [0u8; 32];
-            let data = match data.get(0..32) {
+            let temp = match data.get(0..32) {
                 Some(d) => d,
                 None => return (Err(PeerError::InvalidPacket)),
             };
-            hash.copy_from_slice(data);
+            hash.copy_from_slice(temp);
             let parent_hash = c_to_p_hashmap.get(&hash);
             let parent_name: String = match parent_hash {
                 Some(h) => h_to_n_hashmap.get(h).unwrap(),
