@@ -649,8 +649,8 @@ mod tests {
         .await;
 
         match maps.lock() {
-            Ok(m) => println!("{:?}", m),
+            Ok(m) => println!("{:?}", m.2),
             _ => (),
-        }
+        };
     }
 }
