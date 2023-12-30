@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use lib_web::discovery::Peer;
+
 use crate::{action::Action, peer::peer::PeerError};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -40,11 +42,11 @@ pub fn build_tree_maps(
     //     mut hash_to_name_map,
     // ) = (guard.0, guard.1, guard.2, guard.3);
 
-    get_child_to_parent_hashmap(action, &mut guard.0);
-    let childs = get_parent_to_child_hashmap(action, &mut guard.1);
+    get_child_to_parent_hashmap(action, &mut guard.0)?;
+    let childs = get_parent_to_child_hashmap(action, &mut guard.1)?;
 
     let child_to_parent_map = (guard.0).clone();
-    get_hash_to_name_hashmap(action, &mut guard.2, &child_to_parent_map);
+    get_hash_to_name_hashmap(action, &mut guard.2, &child_to_parent_map)?;
 
     let hash_to_name_map = (guard.2).clone();
     get_name_to_hash_hashmap(
@@ -52,36 +54,47 @@ pub fn build_tree_maps(
         &mut guard.3,
         &child_to_parent_map,
         &hash_to_name_map,
-    );
+    )?;
 
-    childs
+    Ok(childs)
 }
 
-pub fn get_child_to_parent_hashmap(action: &Action, hashmap: &mut HashMap<[u8; 32], [u8; 32]>) {
+pub fn get_child_to_parent_hashmap(
+    action: &Action,
+    hashmap: &mut HashMap<[u8; 32], [u8; 32]>,
+) -> Result<(), PeerError> {
     match action {
         Action::ProcessDatum(data, address) => {
-            // println!("Process datum");
-            let data_type = data.get(32).unwrap().to_owned();
+            let data_type = match data.get(32) {
+                Some(d) => d.to_owned(),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
             let mut hash = [0u8; 32];
-            hash.copy_from_slice(data.get(0..32).unwrap());
+            let data = match data.get(0..32) {
+                Some(d) => d,
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            hash.copy_from_slice(data);
             match data_type {
-                0 => {
-                    // println!("Chunk");
-                    // println!("Hash = {hash:?}");
-                }
+                0 => {}
                 1 => {
-                    // println!("Tree");
-                    let leaves = data.get(33..).unwrap().chunks(32).map(|s| s.to_owned());
-                    for (i, leaf) in leaves.enumerate() {
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(32).map(|s| s.to_owned());
+                    for leaf in leaves {
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
-                        // println!("Hash [{i}] = {leaf:?}");
                         hashmap.insert(leaf_slice, hash);
                     }
                 }
                 2 => {
-                    // println!("Directory");
-                    let leaves = data.get(33..).unwrap().chunks(64).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(64).map(|s| s.to_owned());
                     for leaf in leaves {
                         let name = leaf.get(0..32).unwrap();
                         let leaf = leaf.get(32..).unwrap();
@@ -91,14 +104,17 @@ pub fn get_child_to_parent_hashmap(action: &Action, hashmap: &mut HashMap<[u8; 3
                     }
                 }
                 _ => {
-                    println!("Not a mkfs node")
+                    println!("Not a mkfs node");
+                    return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
             println!("Not the datum we are looking for");
+            return (Err(PeerError::InvalidPacket));
         }
     }
+    return Ok(());
 }
 
 pub fn get_parent_to_child_hashmap(
@@ -107,38 +123,35 @@ pub fn get_parent_to_child_hashmap(
 ) -> Result<Option<Vec<[u8; 32]>>, PeerError> {
     match action {
         Action::ProcessDatum(data, address) => {
-            // println!("Process datum");
-            let data_type = data.get(32).unwrap().to_owned();
+            let data_type = match data.get(32) {
+                Some(d) => d.to_owned(),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
             let mut hash = [0u8; 32];
-            hash.copy_from_slice(data.get(0..32).unwrap());
+            let data = match data.get(0..32) {
+                Some(d) => d,
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            hash.copy_from_slice(data);
             match data_type {
-                0 => {
-                    // println!("Chunk");
-                    // println!("Hash = {hash:?}");
-                    Ok(None)
-                }
-                1 => {
-                    // println!("Tree");
-                    // let leaves: Vec<[u8; 32]> = data
-                    //     .get(33..)
-                    //     .unwrap()
-                    //     .chunks(32)
-                    //     .map(|s| {
-                    //         let mut leaf_slice = [0u8; 32];
-                    //         leaf_slice.copy_from_slice(s);
-                    //         leaf_slice
-                    //     })
-                    //     .collect();
-                    // p_to_c_hashmap.insert(hash, leaves);
-                    Ok(None)
-                }
+                0 => Ok(None),
+                1 => Ok(None),
                 2 => {
-                    // println!("Directory");
-                    let leaves = data.get(33..).unwrap().chunks(64).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(64).map(|s| s.to_owned());
                     let mut children: Vec<[u8; 32]> = Vec::new();
                     for leaf in leaves {
-                        let name = leaf.get(0..32).unwrap();
-                        let leaf = leaf.get(32..).unwrap();
+                        let name = match leaf.get(0..32) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
+                        let leaf = match leaf.get(32..) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
                         children.push(leaf_slice);
@@ -148,13 +161,13 @@ pub fn get_parent_to_child_hashmap(
                 }
                 _ => {
                     println!("Not a mkfs node");
-                    Err(PeerError::InvalidPacket)
+                    return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
             println!("Not the datum we are looking for");
-            Err(PeerError::InvalidPacket)
+            return (Err(PeerError::InvalidPacket));
         }
     }
 }
@@ -163,13 +176,19 @@ pub fn get_hash_to_name_hashmap(
     action: &Action,
     h_to_n_hashmap: &mut HashMap<[u8; 32], String>,
     c_to_p_hashmap: &HashMap<[u8; 32], [u8; 32]>,
-) {
+) -> Result<(), PeerError> {
     match action {
         Action::ProcessDatum(data, address) => {
-            // println!("Process datum");
-            let data_type = data.get(32).unwrap().to_owned();
+            let data_type = match data.get(32) {
+                Some(d) => d.to_owned(),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
             let mut hash = [0u8; 32];
-            hash.copy_from_slice(data.get(0..32).unwrap());
+            let data = match data.get(0..32) {
+                Some(d) => d,
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            hash.copy_from_slice(data);
             // If no parent is found then it is the root
             let mut parent_name: String = match c_to_p_hashmap.get(&hash) {
                 Some(p) => h_to_n_hashmap
@@ -178,17 +197,18 @@ pub fn get_hash_to_name_hashmap(
                     .to_string(),
                 None => "/".to_string(),
             };
-            if parent_name.chars().last().unwrap() != '/' {
-                parent_name.push_str("/");
+            match parent_name.chars().last() {
+                Some('/') => (),
+                _ => parent_name.push_str("/"),
             };
             match data_type {
-                0 => {
-                    // println!("Chunk");
-                    // println!("Hash = {hash:?}");
-                }
+                0 => {}
                 1 => {
-                    // println!("Tree");
-                    let leaves = data.get(33..).unwrap().chunks(32).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(32).map(|s| s.to_owned());
                     for leaf in leaves {
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
@@ -196,30 +216,43 @@ pub fn get_hash_to_name_hashmap(
                     }
                 }
                 2 => {
-                    // println!("Directory");
-                    let leaves = data.get(33..).unwrap().chunks(64).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(64).map(|s| s.to_owned());
                     for leaf in leaves {
-                        let mut name = leaf.get(0..32).unwrap().to_vec();
+                        let name = match leaf.get(0..32) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
+                        let mut name = name.to_vec();
                         name.retain(|&x| x != 0u8);
                         let name = String::from_utf8(name).unwrap();
                         let mut temp_name = parent_name.clone();
                         temp_name.push_str(&name);
                         let name = temp_name;
-                        let leaf = leaf.get(32..).unwrap();
+                        let leaf = match leaf.get(32..) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
                         h_to_n_hashmap.insert(leaf_slice, name);
                     }
                 }
                 _ => {
-                    println!("Not a mkfs node")
+                    println!("Not a mkfs node");
+                    return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
             println!("Not the datum we are looking for");
+            return (Err(PeerError::InvalidPacket));
         }
     }
+    return Ok(());
 }
 
 pub fn get_name_to_hash_hashmap(
@@ -227,29 +260,34 @@ pub fn get_name_to_hash_hashmap(
     n_to_h_hashmap: &mut HashMap<String, Vec<[u8; 32]>>,
     c_to_p_hashmap: &HashMap<[u8; 32], [u8; 32]>,
     h_to_n_hashmap: &HashMap<[u8; 32], String>,
-) {
+) -> Result<(), PeerError> {
     let action = action.clone();
     match action {
         Action::ProcessDatum(data, address) => {
-            // println!("Process datum");
-            let data_type = data.get(32).unwrap().to_owned();
+            let data_type = match data.get(32) {
+                Some(d) => d.to_owned(),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
             let mut hash = [0u8; 32];
-            hash.copy_from_slice(data.get(0..32).unwrap());
+            let data = match data.get(0..32) {
+                Some(d) => d,
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            hash.copy_from_slice(data);
             let parent_hash = c_to_p_hashmap.get(&hash);
             let parent_name: String = match parent_hash {
                 Some(h) => h_to_n_hashmap.get(h).unwrap(),
                 None => "/",
             }
             .to_string();
-            // If no parent is found then it is the root
             match data_type {
-                0 => {
-                    // println!("Chunk");
-                    // println!("Hash = {hash:?}");
-                }
+                0 => {}
                 1 => {
-                    // println!("Tree");
-                    let leaves = data.get(33..).unwrap().chunks(32).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(32).map(|s| s.to_owned());
                     // check if there is already an entry with this key
                     let result = match n_to_h_hashmap.get(&parent_name) {
                         Some(c) => Some(c.clone()),
@@ -277,30 +315,43 @@ pub fn get_name_to_hash_hashmap(
                     }
                 }
                 2 => {
-                    // println!("Directory");
-                    let leaves = data.get(33..).unwrap().chunks(64).map(|s| s.to_owned());
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(64).map(|s| s.to_owned());
                     for leaf in leaves {
-                        let mut name = leaf.get(0..32).unwrap().to_vec();
+                        let name = match leaf.get(0..32) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
+                        let mut name = name.to_vec();
                         name.retain(|&x| x != 0u8);
                         let name = String::from_utf8(name).unwrap();
                         let mut temp_name = parent_name.clone();
                         temp_name.push_str(&name);
                         let name = temp_name;
-                        let leaf = leaf.get(32..).unwrap();
+                        let leaf = match leaf.get(32..) {
+                            Some(d) => d,
+                            None => return (Err(PeerError::InvalidPacket)),
+                        };
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
                         n_to_h_hashmap.insert(name, vec![leaf_slice]);
                     }
                 }
                 _ => {
-                    println!("Not a mkfs node")
+                    println!("Not a mkfs node");
+                    return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
             println!("Not the datum we are looking for");
+            return (Err(PeerError::InvalidPacket));
         }
     }
+    return Ok(());
 }
 
 #[cfg(test)]
