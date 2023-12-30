@@ -562,12 +562,12 @@ mod tests {
         //     Arc::clone(&my_data),
         // );
 
-        {
-
-        }
-        sleep(Duration::from_secs(3)).await;
-
+        
         let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        {
+            Queue::lock_and_push(Arc::clone(&action_queue), action::Action::SendHello(None, vec![97,110,105,116], *&sock_addr));
+        }
+        sleep(Duration::from_secs(1)).await;
         // let hash : [u8;32] = {
         //     let peers = active_peers.lock().unwrap();
         //     let peer = peers.addr_map.get(&sock_addr).unwrap();
