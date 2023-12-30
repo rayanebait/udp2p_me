@@ -1,4 +1,3 @@
-// pub mod peer_data;
 pub mod action;
 pub mod congestion_handler;
 pub mod handle_action;
@@ -8,29 +7,37 @@ pub mod peer;
 pub mod process;
 pub mod sender_receiver;
 pub mod store;
+pub mod resend;
 
 pub mod import_export {
-    use prelude::*;
-    use std::default;
-    use std::future::IntoFuture;
+    use {
+        prelude::*,
+        std::{
+            default,
+            future::IntoFuture,
+            /*Multi task*/
+            sync::{Arc, Mutex},
+            net::SocketAddr,
+        },
 
-    use std::sync::{Arc, Mutex};
+        /*Utilities */
+        anyhow::{bail, Context, Result},
+        log::{debug, error, info, warn},
 
-    /*Utilities */
-    use anyhow::{bail, Context, Result};
-    use log::{debug, error, info, warn};
+        /*Async/net libraries */
+        futures::stream::FuturesUnordered,
+        futures::{select, Future, StreamExt},
+        tokio::{
+            net::UdpSocket,
+            test,
+        },
 
-    /*Async/net libraries */
-    use futures::stream::FuturesUnordered;
-    use futures::{select, Future, StreamExt};
-    use std::net::SocketAddr;
-    use tokio::net::UdpSocket;
-    use tokio::test;
-
-    use crate::congestion_handler::*;
-    // use crate::peer_data::*;
-    use crate::handle_packet::*;
-    use crate::packet::*;
+        crate::{
+            congestion_handler::*,
+            handle_packet::*,
+            packet::*,
+        },
+    };
 
     pub enum Error {
         Packet(PacketError),
@@ -177,8 +184,7 @@ mod tests {
     use crate::process::*;
     use crate::sender_receiver::*;
     use crate::{congestion_handler::build_queues, store::build_tree_mutex};
-    use crate::{congestion_handler::Queue, store::get_full_name};
-    use crate::{handle_action::*, store::get_name_to_hash_hashmap};
+    use crate::{handle_action::*, store::*};
 
     use lib_file::mk_fs::{self, MktFsNode};
     // #[test]

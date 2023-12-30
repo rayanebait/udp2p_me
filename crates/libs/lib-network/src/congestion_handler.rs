@@ -253,6 +253,13 @@ impl PendingIds {
     pub fn build_mutex() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(PendingIds::default()))
     }
+    pub fn launch_flusher_task(
+        pending_ids: Arc<Mutex<PendingIds>>
+    ){
+        tokio::spawn(async move {
+
+        });
+    }
     /*Each time a packet is sent, no access to raw packet so need Packet struct */
     pub fn lock_and_add_id(
         pending_ids: Arc<Mutex<PendingIds>>,
@@ -273,6 +280,10 @@ impl PendingIds {
                 false
             ));
     }
+
+    /*Searches for an Id and sets it's can_pop status to true.
+    Now at the next call of flush,  */
+    /*Only handle packet task can set an Id to can_pop=true. */
     pub fn id_exists_and_pop(
         pending_ids: Arc<Mutex<PendingIds>>,
         packet: &Packet,
