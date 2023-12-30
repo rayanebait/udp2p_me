@@ -190,17 +190,25 @@ pub fn get_hash_to_name_hashmap(
             };
             hash.copy_from_slice(temp);
             // If no parent is found then it is the root
-            let mut parent_name: String = match c_to_p_hashmap.get(&hash) {
-                Some(p) => h_to_n_hashmap
-                    .get(p)
-                    .unwrap_or(&"/".to_string())
-                    .to_string(),
+            let mut parent_name = match c_to_p_hashmap.get(&hash) {
+                Some(p) => match h_to_n_hashmap.get(p) {
+                    Some(n) => {
+                        println!("FOUND PARENT NAME");
+                        n.to_string()
+                    }
+                    None => {
+                        println!("FAILED TO FIND PARENT NAME");
+                        "/".to_string()
+                    }
+                },
                 None => "/".to_string(),
             };
-            match parent_name.chars().last() {
+            let mut temp_parent_name = parent_name.clone();
+            match temp_parent_name.chars().last() {
                 Some('/') => (),
-                _ => parent_name.push_str("/"),
+                _ => temp_parent_name.push_str("/"),
             };
+            println!("PARENT NAME = {}", &temp_parent_name);
             match data_type {
                 0 => {}
                 1 => {
@@ -221,6 +229,7 @@ pub fn get_hash_to_name_hashmap(
                         None => return (Err(PeerError::InvalidPacket)),
                     };
                     let leaves = data.chunks(64).map(|s| s.to_owned());
+                    println!("##############");
                     for leaf in leaves {
                         let name = match leaf.get(0..32) {
                             Some(d) => d,
@@ -229,9 +238,10 @@ pub fn get_hash_to_name_hashmap(
                         let mut name = name.to_vec();
                         name.retain(|&x| x != 0u8);
                         let name = String::from_utf8(name).unwrap();
-                        let mut temp_name = parent_name.clone();
+                        let mut temp_name = temp_parent_name.clone();
                         temp_name.push_str(&name);
                         let name = temp_name;
+                        println!("CHILD NAME = {}", &name);
                         let leaf = match leaf.get(32..) {
                             Some(d) => d,
                             None => return (Err(PeerError::InvalidPacket)),
@@ -283,6 +293,11 @@ pub fn get_name_to_hash_hashmap(
                 None => "/",
             }
             .to_string();
+            let mut temp_parent_name = parent_name.clone();
+            match temp_parent_name.chars().last() {
+                Some('/') => (),
+                _ => temp_parent_name.push_str("/"),
+            };
             match data_type {
                 0 => {}
                 1 => {
@@ -331,7 +346,7 @@ pub fn get_name_to_hash_hashmap(
                         let mut name = name.to_vec();
                         name.retain(|&x| x != 0u8);
                         let name = String::from_utf8(name).unwrap();
-                        let mut temp_name = parent_name.clone();
+                        let mut temp_name = temp_parent_name.clone();
                         temp_name.push_str(&name);
                         let name = temp_name;
                         let leaf = match leaf.get(32..) {
