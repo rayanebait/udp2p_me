@@ -373,7 +373,7 @@ pub async fn fetch_subtree_from(
         Action::SendGetDatumWithHash(hash.clone(), *&sock_addr),
     );
     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-    
+
     match peek_until_datum_with_hash_from(
         Arc::clone(&peek_process_queue),
         Arc::clone(&process_queue_readers_state),
@@ -404,6 +404,7 @@ pub async fn fetch_subtree_from(
         Some(childs) => {
             // let mut hash_vec = vec![];
             for child_hash in childs {
+                println!("Asking for child {:?}", &child_hash);
                 subtasks.push(fetch_subtree_from(
                     Arc::clone(&peek_process_queue),
                     Arc::clone(&process_queue_readers_state),
