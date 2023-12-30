@@ -3,6 +3,21 @@ use std::collections::HashMap;
 use crate::{action::Action, peer::peer::PeerError};
 use std::sync::{Arc, Mutex, PoisonError};
 
+pub fn build_tree_mutex() -> Arc<
+    Mutex<(
+        HashMap<[u8; 32], [u8; 32]>,
+        HashMap<[u8; 32], Vec<[u8; 32]>>,
+        HashMap<[u8; 32], String>,
+        HashMap<String, Vec<[u8; 32]>>,
+    )>,
+> {
+    Arc::new(Mutex::new((
+        HashMap::<[u8; 32], [u8; 32]>::new(),
+        HashMap::<[u8; 32], Vec<[u8; 32]>>::new(),
+        HashMap::<[u8; 32], String>::new(),
+        HashMap::<String, Vec<[u8; 32]>>::new(),
+    )))
+}
 pub fn build_tree_maps(
     action: &Action,
     maps: Arc<
@@ -13,7 +28,7 @@ pub fn build_tree_maps(
             HashMap<String, Vec<[u8; 32]>>,
         )>,
     >,
-)-> Result<Option<Vec<[u8;32]>>, PeerError>{
+) -> Result<Option<Vec<[u8; 32]>>, PeerError> {
     let mut guard = match maps.lock() {
         Ok(maps) => maps,
         Err(poison_error) => panic!("Some thread panicked"),
@@ -32,7 +47,12 @@ pub fn build_tree_maps(
     get_hash_to_name_hashmap(action, &mut guard.2, &child_to_parent_map);
 
     let hash_to_name_map = (guard.2).clone();
-    get_name_to_hash_hashmap(action, &mut guard.3, &child_to_parent_map, &hash_to_name_map);
+    get_name_to_hash_hashmap(
+        action,
+        &mut guard.3,
+        &child_to_parent_map,
+        &hash_to_name_map,
+    );
 
     childs
 }
@@ -84,7 +104,7 @@ pub fn get_child_to_parent_hashmap(action: &Action, hashmap: &mut HashMap<[u8; 3
 pub fn get_parent_to_child_hashmap(
     action: &Action,
     hashmap: &mut HashMap<[u8; 32], Vec<[u8; 32]>>,
-)->Result<Option<Vec<[u8;32]>>, PeerError>{
+) -> Result<Option<Vec<[u8; 32]>>, PeerError> {
     match action {
         Action::ProcessDatum(data, address) => {
             // println!("Process datum");

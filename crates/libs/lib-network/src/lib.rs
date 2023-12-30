@@ -169,7 +169,7 @@ mod tests {
         time::{sleep, Duration},
     };
 
-    use crate::congestion_handler::build_queues;
+    use crate::{congestion_handler::build_queues, store::build_tree_mutex};
     use crate::congestion_handler::Queue;
     use crate::handle_action::*;
     use crate::handle_packet::handle_packet_task;
@@ -393,8 +393,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn register_and_export() {
-        // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let tree = MktFsNode::try_from_path(
             &PathBuf::from("/home/splash/files/notes_m2/protocoles_reseaux/tp/Projet/to_export/"),
@@ -482,6 +482,116 @@ mod tests {
             processing_two,
             sending,
             registering
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
+    async fn register_and_fetch_tree() {
+        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+
+        let maps = build_tree_mutex();
+
+        let (
+            receive_queue,
+            send_queue,
+            action_queue,
+            process_queue,
+            pending_ids,
+            receive_queue_state,
+            action_queue_state,
+            send_queue_state,
+            process_queue_state,
+            process_queue_readers_state,
+        ) = build_queues();
+
+        let active_peers = ActivePeers::build_mutex();
+
+        let mut my_data = Peer::new();
+        my_data.set_name(vec![97, 110, 105, 116]);
+        let my_data = Arc::new(my_data.clone());
+
+        let receiving = receiver(
+            Arc::clone(&sock),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+        );
+
+        let handling = handle_packet_task(
+            Arc::clone(&pending_ids),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&process_queue_readers_state),
+        );
+        let processing_two = handle_action_task(
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+        );
+        let processing_one = process_task(
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&active_peers),
+            Arc::clone(&my_data),
+            // Arc::clone(&map)
+        );
+
+        let sending = sender(
+            Arc::clone(&sock),
+            Arc::clone(&send_queue),
+            Arc::clone(&send_queue_state),
+            Arc::clone(&pending_ids),
+        );
+
+        // let metrics = Handle::current().metrics();
+        // let n = metrics.active_tasks_count();
+        // println!("Runtime has {} active tasks", n);
+        // let registering = register(
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_state),
+        //     Arc::clone(&process_queue_readers_state),
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&my_data),
+        // );
+
+        {
+
+        }
+        sleep(Duration::from_secs(3)).await;
+
+        let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        // let hash : [u8;32] = {
+        //     let peers = active_peers.lock().unwrap();
+        //     let peer = peers.addr_map.get(&sock_addr).unwrap();
+        //     peer.get_root_hash().unwrap()
+        // };
+        let hash = [0u8;32];
+
+        let fetching = fetch_subtree_from(
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&maps),
+            hash,
+            sock_addr);
+
+        join!(
+            receiving,
+            handling,
+            processing_one,
+            processing_two,
+            sending,
+            // registering,
+            fetching
         );
     }
 }

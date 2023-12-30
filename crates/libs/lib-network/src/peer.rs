@@ -1,8 +1,8 @@
 pub mod peer {
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use thiserror::Error;
-    use std::collections::HashMap;
-    use tokio::time::{sleep,Sleep, Duration, Instant};
+    use tokio::time::{sleep, Duration, Instant, Sleep};
 
     use std::sync::{Arc, Mutex};
 
@@ -32,8 +32,8 @@ pub mod peer {
         addresses: Vec<SocketAddr>,
         root: Option<[u8; 32]>,
         public_key: Option<[u8; 64]>,
-        extensions: Option<[u8;4]>,
-        timer: Option<Arc<Sleep>>
+        extensions: Option<[u8; 4]>,
+        timer: Option<Arc<Sleep>>,
     }
 
     impl Peer {
@@ -50,11 +50,11 @@ pub mod peer {
             self.public_key = Some(public_key.clone());
             self
         }
-        pub fn set_name(&mut self, name: Vec<u8>)-> &mut Self {
+        pub fn set_name(&mut self, name: Vec<u8>) -> &mut Self {
             self.name = Some(name);
             self
         }
-        pub fn set_extensions(&mut self, extensions: Option<[u8;4]>)-> &mut Self {
+        pub fn set_extensions(&mut self, extensions: Option<[u8; 4]>) -> &mut Self {
             self.extensions = extensions;
             self
         }
@@ -63,7 +63,7 @@ pub mod peer {
             self.addresses.push(address);
             self
         }
-        pub fn set_timer(&mut self)-> &mut Self {
+        pub fn set_timer(&mut self) -> &mut Self {
             self.timer = Some(Arc::new(sleep(Duration::from_secs(160))));
             self
         }
@@ -89,15 +89,13 @@ pub mod peer {
                 Some(&self.addresses)
             }
         }
-        pub fn get_name(&self) -> Option<Vec<u8>>{
+        pub fn get_name(&self) -> Option<Vec<u8>> {
             self.name.clone()
         }
-        pub fn get_extensions(&self) -> Option<[u8;4]>{
+        pub fn get_extensions(&self) -> Option<[u8; 4]> {
             *&self.extensions
         }
-
     }
-
 
     /*When receiving hello/hello reply packet:
         -Add/create peer into active_peers(in process), 2 cases:
@@ -105,7 +103,7 @@ pub mod peer {
             -peer doesn't exist->create and add peer.
     When receiving any other packet:
         -Check if peer exists, 3 cases:
-            -peer doesn't exist->ignore (only print info) 
+            -peer doesn't exist->ignore (only print info)
             -peer exists:
                 -Internal timer expired: ignore
                 -Internal timer not expired: keep alive
@@ -114,43 +112,46 @@ pub mod peer {
         - */
     #[derive(Default)]
     pub struct ActivePeers {
-        addr_map: HashMap<SocketAddr, Peer>,
+        pub addr_map: HashMap<SocketAddr, Peer>,
     }
 
     impl ActivePeers {
-        pub fn build_mutex()->Arc<Mutex<Self>>{
+        pub fn build_mutex() -> Arc<Mutex<Self>> {
             Arc::new(Mutex::new(ActivePeers::default()))
         }
-        /*Add normal push pop and in set_... verify if peer exists, if not 
+        /*Add normal push pop and in set_... verify if peer exists, if not
         only create peer in set_peer_extensions_and_name not in root and pkey */
-        pub fn push(&mut self, peer:&Peer){
+        pub fn push(&mut self, peer: &Peer) {
             for addr in &peer.addresses {
                 self.addr_map.insert(*addr, peer.clone());
-            };
+            }
         }
-        pub fn pop(&mut self, peer: &Peer){
+        pub fn pop(&mut self, peer: &Peer) {
             for addr in &peer.addresses {
                 self.addr_map.remove(addr);
-            };
+            }
         }
-        pub fn lock_and_get(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr)->Option<Peer>{
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+        pub fn lock_and_get(
+            active_peers: Arc<Mutex<ActivePeers>>,
+            sock_addr: SocketAddr,
+        ) -> Option<Peer> {
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
             active_peers.addr_map.get(&sock_addr).cloned()
         }
-        pub fn lock_and_push(active_peers: Arc<Mutex<ActivePeers>>, peer: Peer){
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+        pub fn lock_and_push(active_peers: Arc<Mutex<ActivePeers>>, peer: Peer) {
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
             active_peers.push(&peer);
         }
-        pub fn lock_and_pop(active_peers: Arc<Mutex<ActivePeers>>, peer: &Peer){
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+        pub fn lock_and_pop(active_peers: Arc<Mutex<ActivePeers>>, peer: &Peer) {
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
             active_peers.pop(peer);
         }
@@ -158,20 +159,24 @@ pub mod peer {
         /*Checks if there is a peer associated to sock_addr. If yes
         reset timer and return, else create the peer and set its extensions and name.
         Cannot fail. */
-        pub fn set_peer_extensions_and_name(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr,
-                                    extensions: Option<[u8;4]>,name: Vec<u8>){
+        pub fn set_peer_extensions_and_name(
+            active_peers: Arc<Mutex<ActivePeers>>,
+            sock_addr: SocketAddr,
+            extensions: Option<[u8; 4]>,
+            name: Vec<u8>,
+        ) {
             /*DONE */
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
-            match active_peers.addr_map.get_mut(&sock_addr){
-                Some(peer)=>{
+            match active_peers.addr_map.get_mut(&sock_addr) {
+                Some(peer) => {
                     /*Keep alive */
                     peer.set_timer();
                     return;
-                },
-                _=> {
+                }
+                _ => {
                     /*Create peer */
                     let mut peer = Peer::new();
                     peer.add_address(sock_addr)
@@ -180,33 +185,36 @@ pub mod peer {
                         .set_timer();
                     active_peers.push(&peer);
                     return;
-                },
+                }
             };
         }
 
-        pub fn set_peer_root(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr,
-                                    root: Option<[u8;32]>)->Result<(), PeerError>{
+        pub fn set_peer_root(
+            active_peers: Arc<Mutex<ActivePeers>>,
+            sock_addr: SocketAddr,
+            root: Option<[u8; 32]>,
+        ) -> Result<(), PeerError> {
             /*DONE */
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
-            let peer = match active_peers.addr_map.get_mut(&sock_addr){
-                Some(peer)=> peer,
+            let peer = match active_peers.addr_map.get_mut(&sock_addr) {
+                Some(peer) => peer,
                 /*Ignore if peer doesn't exist */
-                _=>return Err(PeerError::UnknownPeer),
+                _ => return Err(PeerError::UnknownPeer),
             };
 
             /*keep alive */
             match peer.timer.as_ref().unwrap().is_elapsed() {
-                true=>{
+                true => {
                     let peer_clone = peer.clone();
                     /*useless line but it is why can't pop with peer */
                     drop(peer);
                     active_peers.pop(&peer_clone);
                     return Err(PeerError::ResponseTimeout);
-                },
-                false=> {
+                }
+                false => {
                     /*keep alive and set peer root*/
                     peer.set_timer();
                     peer.root = root;
@@ -214,28 +222,31 @@ pub mod peer {
                 }
             }
         }
-        pub fn set_peer_public_key(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr,
-                                    public_key: Option<[u8;64]>)->Result<(), PeerError>{
+        pub fn set_peer_public_key(
+            active_peers: Arc<Mutex<ActivePeers>>,
+            sock_addr: SocketAddr,
+            public_key: Option<[u8; 64]>,
+        ) -> Result<(), PeerError> {
             /*DONE */
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
-            let peer = match active_peers.addr_map.get_mut(&sock_addr){
-                Some(peer)=> peer,
-                _=>return Err(PeerError::UnknownPeer),
+            let peer = match active_peers.addr_map.get_mut(&sock_addr) {
+                Some(peer) => peer,
+                _ => return Err(PeerError::UnknownPeer),
             };
 
             match peer.timer.as_ref().unwrap().is_elapsed() {
-                true=>{
+                true => {
                     /*drop the peer. */
                     let peer_clone = peer.clone();
                     /*useless line but it is why can't pop with peer directly*/
                     drop(peer);
                     active_peers.pop(&peer_clone);
                     return Err(PeerError::ResponseTimeout);
-                },
-                false=> {
+                }
+                false => {
                     /*keep alive and set public key*/
                     peer.set_timer();
                     peer.public_key = public_key;
@@ -245,20 +256,22 @@ pub mod peer {
         }
         /*Checks the internal timer attached to peer to see if it is elapsed */
         /*The keep alive is done internally in every other methods  */
-        pub fn keep_peer_alive(active_peers: Arc<Mutex<ActivePeers>>, sock_addr: SocketAddr)
-            ->Result<(), PeerError>{
+        pub fn keep_peer_alive(
+            active_peers: Arc<Mutex<ActivePeers>>,
+            sock_addr: SocketAddr,
+        ) -> Result<(), PeerError> {
             /*DONE */
-            let mut active_peers = match active_peers.lock(){
-                Ok(active_peers)=> active_peers,
-                Err(_)=>panic!("Peers mutex is poisoned"),
+            let mut active_peers = match active_peers.lock() {
+                Ok(active_peers) => active_peers,
+                Err(_) => panic!("Peers mutex is poisoned"),
             };
-            let mut peer = match active_peers.addr_map.get_mut(&sock_addr){
-                Some(peer)=> peer,
-                _=>return Err(PeerError::UnknownPeer),
+            let mut peer = match active_peers.addr_map.get_mut(&sock_addr) {
+                Some(peer) => peer,
+                _ => return Err(PeerError::UnknownPeer),
             };
 
             match &peer.timer {
-                Some(timer)=>{
+                Some(timer) => {
                     if timer.is_elapsed() {
                         active_peers.addr_map.remove(&sock_addr);
                         return Err(PeerError::ResponseTimeout);

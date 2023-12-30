@@ -117,7 +117,6 @@ pub fn process_action(
             /*DONE */
             println!(
                 "Received Error with body: {}\n from {}\n",
-                // String::from_utf8_lossy(&error_msg),
                 String::from_utf8(error_msg).unwrap(),
                 sock_addr
             );
@@ -365,7 +364,7 @@ pub async fn fetch_subtree_from(
     >,
     hash: [u8; 32],
     sock_addr: SocketAddr,
-) -> Result<(), PeerError>{
+) -> Result<(), PeerError> {
     let mut subtasks = vec![];
     let children: Option<Vec<[u8; 32]>>;
 
@@ -388,9 +387,7 @@ pub async fn fetch_subtree_from(
         Ok(datum_action) => {
             children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
                 Ok(childs) => match childs {
-                    Some(childs) => {
-                        Some(childs)
-                    }
+                    Some(childs) => Some(childs),
                     None => None,
                 },
                 Err(PeerError::InvalidPacket) => return Err(PeerError::InvalidPacket),
@@ -398,31 +395,32 @@ pub async fn fetch_subtree_from(
             };
         }
         Err(PeerError::ResponseTimeout) => {
-            return Err(PeerError::ResponseTimeout)
+            return Err(PeerError::ResponseTimeout);
             // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
         }
         _ => todo!(),
     };
     match children {
-        Some(childs)=> {
-            for child_hash in childs{
+        Some(childs) => {
+            for child_hash in childs {
                 subtasks.push(fetch_subtree_from(
                     Arc::clone(&peek_process_queue),
-                        Arc::clone(&process_queue_state),
-                        Arc::clone(&action_queue),
-                        Arc::clone(&action_queue_state),
-                        Arc::clone(&maps),
-                        child_hash,
-                        sock_addr,
-                    ));
-        }},
-        None =>return Ok(()),
+                    Arc::clone(&process_queue_state),
+                    Arc::clone(&action_queue),
+                    Arc::clone(&action_queue_state),
+                    Arc::clone(&maps),
+                    child_hash,
+                    sock_addr,
+                ));
+            }
+        }
+        None => return Ok(()),
     };
     let completed = join_all(subtasks).await;
     for result in completed {
         match result {
-            Ok(())=>continue,
-            Err(e)=>return Err(e),
+            Ok(()) => continue,
+            Err(e) => return Err(e),
         }
     }
 
