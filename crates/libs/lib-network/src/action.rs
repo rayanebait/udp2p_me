@@ -29,6 +29,7 @@ pub enum Action{
     ProcessRootReply(Option<[u8;32]>, SocketAddr),
     ProcessPublicKeyReply(Option<[u8;64]>, SocketAddr),
     ProcessDatum(Vec<u8>, SocketAddr),
+    ProcessNatTraversalReply(Vec<u8>, SocketAddr)
 
 }
 

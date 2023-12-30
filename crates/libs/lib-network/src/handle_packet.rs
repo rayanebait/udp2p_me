@@ -277,8 +277,8 @@ fn handle_response_packet(
         }
         PacketType::NatTraversalReply => {
             println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
-            todo!()
-        }
+            Ok(Action::ProcessNatTraversalReply(packet.get_body().to_owned(), socket_addr))
+        },
         _ => Err(HandlingError::InvalidPacketError),
     }
 }

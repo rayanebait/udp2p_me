@@ -55,7 +55,6 @@ pub async fn process_task(
                         Arc::clone(&action_queue_state),
                         Arc::clone(&active_peers),
                         Arc::clone(&my_data),
-                        // Arc::clone(&to_export)
                     );
                     /*return the action required */
                 }
@@ -183,6 +182,7 @@ pub fn process_action(
             return;
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
+            /*to do */
             return;
         }
         Action::ProcessHelloReply(extensions, name, sock_addr) => {
@@ -210,8 +210,7 @@ pub fn process_action(
             return;
         }
         Action::ProcessDatum(datum, sock_addr) => {
-            /*datum is valid at this point (verified in handle packet*/
-            /*or not ? */
+            /*Shouldn't  */
             return;
         }
         _ => println!("Shouldn't happen: {:?}", action),
@@ -419,9 +418,9 @@ pub async fn fetch_subtree_from(
 
             // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
         }
-        None =>{
+        None => {
             println!("no childs");
-            return Ok(())
+            return Ok(());
         }
     };
     let completed = join_all(subtasks).await;
@@ -467,21 +466,21 @@ pub async fn download(
 
 pub async fn peek_until_datum_with_hash_from(
     peek_process_queue: Arc<RwLock<Queue<Action>>>,
-    process_queue_state: Arc<QueueState>,
+    process_queue_readers_state: Arc<QueueState>,
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     hash: [u8; 32],
     sock_addr: SocketAddr,
 ) -> Result<Action, PeerError> {
-    /*Curr not working because stuck in waiting process queue
-    try with two tasks or two futures */
+    /*Spawns a task that peeks the process queue waiting for a packet
+    from the given address with the given peer. */
     let task_handle = tokio::spawn(async move {
         loop {
             /*Wait notify all from receive task */
             let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
                 Some(front) => front,
                 None => {
-                    process_queue_state.wait();
+                    process_queue_readers_state.wait();
                     continue;
                 }
             };
@@ -499,8 +498,10 @@ pub async fn peek_until_datum_with_hash_from(
             }
         }
     });
+    /*Handle that can be sent to a task and used to abort a given task. */
     let abort_task_handle = task_handle.abort_handle();
 
+    /*Sleeps for the given duration then aborts the given task. */
     let timeout_handle = tokio::spawn(async move {
         let timeout = sleep(Duration::from_secs(3)).await;
         if abort_task_handle.is_finished() {
