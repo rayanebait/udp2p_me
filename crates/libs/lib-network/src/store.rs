@@ -276,7 +276,10 @@ pub fn get_name_to_hash_hashmap(
             hash.copy_from_slice(temp);
             let parent_hash = c_to_p_hashmap.get(&hash);
             let parent_name: String = match parent_hash {
-                Some(h) => h_to_n_hashmap.get(h).unwrap(),
+                Some(h) => match h_to_n_hashmap.get(h) {
+                    Some(t) => t,
+                    None => "/",
+                },
                 None => "/",
             }
             .to_string();
