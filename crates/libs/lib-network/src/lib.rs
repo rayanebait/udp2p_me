@@ -44,149 +44,41 @@ pub mod import_export {
         // Peer(PeerError),
     }
 
-    pub async fn timeout(dur: Duration) -> Result<(SocketAddr, Packet), PacketError> {
-        tokio::time::sleep(Duration::from_secs(4)).await;
-
-        Err(PacketError::UnknownError)
-    }
-
-    // pub async fn handshake_addr(sock: Arc<UdpSocket>, peer_addr: SocketAddr,
-    //                 pending: Arc<Mutex<PendingIds>>,
-    //                 active_peers: Arc<Mutex<ActivePeers>>)->Result<(), PeerError>{
-
-    //     /*Launch async task*/
-    //     let handle =
-    //         tokio::spawn(async move{
-    //         let Ok(packet_id)
-    //             = Packet::send_hello(&sock, &peer_addr.clone()).await
-    //             else{
-    //                 return Err(PeerError::UnknownError);
-    //             };
-
-    //         /*Lock pending ids to push the id of the packet sent */
-    //         let mut arc_pending_guard = pending
-    //                                     .lock().unwrap();
-
-    //         /*Push the id of the packet sent */
-    //         arc_pending_guard.add_packet_id_raw(packet_id , &peer_addr.clone());
-
-    //         /*Unlock the ids for other tasks */
-    //         /*It used to not work and the actions taken on
-    //         a lock should be done in a sub {} scope, it should
-    //         work now*/
-    //         drop(arc_pending_guard);
-    //         /*Remark: add_packet_id is not async so that the mutex guard
-    //         is not sent in an async where it could be awaited and create
-    //         a deadlock */
-
-    //         /*
-    //             waiting.iter().next() launches its elements (functions)
-    //             concurrently and waits for the first to finish then returns
-    //         */
-    //         let waiting = FuturesUnordered::new();
-
-    //         /*Push a timer of 1 second*/
-    //         waiting.push(timeout(Duration::from_secs(1)).await);
-
-    //         loop{
-    //             let mut wait_packet =
-    //                     Packet::recv_from(&sock);
-
-    //             /*Push a listener on the socket*/
-    //             waiting.push(wait_packet.await);
-
-    //             /*Wait until either the timer finishes or a packet is received*/
-    //             let packet_or_timeout =
-    //                      waiting.iter().next().unwrap();
-
-    //             match packet_or_timeout {
-    //                 Ok((sock_addr, packet)) =>{
-    //                     if !packet.is(packet.get_packet_type()){
-    //                         continue;
-    //                     } else {
-    //                         // let arc_active_peers_guard =
-    //                         //              active_peers.lock().unwrap();
-    //                         // arc_active_peers_guard.ad
-    //                         return Ok(());
-    //                     }
-    //                 },
-    //                 Err(PacketError::UnknownError) =>
-    //                          return Err(PeerError::ResponseTimeoutError),
-    //                 _ => panic!("Shouldn't happen"),
-    //             }
-    //         }
-    //     }).await;
-
-    //     handle.unwrap()
-
-    // }
-
-    // pub async fn handshake(sock: Arc<UdpSocket>, peer: PeerData,
-    //                 pending: Arc<Mutex<PendingIds>>,
-    //                 active_peers: Arc<Mutex<ActivePeers>>)->Result<(), PeerError>{
-
-    //     tokio::spawn(async move {
-    //             let addrs = peer.get_socketaddr().unwrap();
-    //             let addr = addrs.get(0).unwrap();
-
-    //             handshake_addr(Arc::clone(&sock),
-    //                  addr.clone(), Arc::clone(&pending),
-    //                 Arc::clone(&active_peers)).await
-    //         }
-    //     ).await.unwrap()
-    // }
-
-    // pub async fn send_public_key(){
-
-    // }
-
-    // pub async
-    // fn register(sock: Arc<UdpSocket>, root: Option<[u8;32]>,
-    //          public_key: Option<[u8;64]>,
-    //         pending: Arc<Mutex<PendingIds>>,
-    //         active_peers: Arc<Mutex<ActivePeers>>)->Result<(),PeerError>{
-
-    //     let mut server = PeerData::new();
-    //     server.set_socketaddr( vec!["81.194.27.155:8443".parse().unwrap()]);
-
-    //     handshake(sock, server,
-    //                     Arc::clone(&pending),
-    //                     Arc::clone(&active_peers)).await;
-
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, path::PathBuf};
+    use {
+        std::{net::SocketAddr, path::PathBuf},
 
-    use super::*;
+        super::*,
 
-    use nanorand::{wyrand::WyRand, BufferedRng, Rng};
+        nanorand::{wyrand::WyRand, BufferedRng, Rng},
 
-    use futures::join;
-    use import_export::*;
-    use std::sync::{Arc, Mutex};
-    use tokio::{
-        self,
-        net::UdpSocket,
-        runtime,
-        runtime::Handle,
-        time::{sleep, Duration},
+        futures::join,
+        import_export::*,
+        std::sync::{Arc, Mutex},
+        tokio::{
+            self,
+            net::UdpSocket,
+            runtime,
+            runtime::Handle,
+            time::{sleep, Duration},
+        },
+
+        crate::{
+            congestion_handler::*,
+            handle_action::handle_action_task,
+            handle_packet::handle_packet_task,
+            packet::*,
+            peer::peer::*,
+            process::*,
+            sender_receiver::*,
+            store::*,
+        },
+
+        lib_file::mk_fs::{self, MktFsNode},
     };
-
-    use crate::congestion_handler::{Queue, QueueState};
-    use crate::handle_action::*;
-    use crate::handle_packet::handle_packet_task;
-    use crate::packet::*;
-    use crate::peer::peer::*;
-    use crate::process::*;
-    use crate::sender_receiver::*;
-    use crate::{congestion_handler::build_queues, store::build_tree_mutex};
-    use crate::{handle_action::*, store::*};
-
-    use lib_file::mk_fs::{self, MktFsNode};
     // #[test]
     // fn it_works() {
     //     let result = add(2, 2);
