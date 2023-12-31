@@ -8,6 +8,7 @@ pub mod process;
 pub mod sender_receiver;
 pub mod store;
 pub mod resend;
+pub mod task_launcher_canceller;
 
 pub mod import_export {
     use {
