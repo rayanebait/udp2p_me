@@ -25,10 +25,10 @@ pub mod peer {
         #[error("Invalid packet")]
         InvalidPacket,
         #[error("UnkownExtension")]
-        UnknownExtension
+        UnknownExtension,
     }
 
-    #[derive(Default, Clone)]
+    #[derive(Default, Debug, Clone)]
     pub struct Peer {
         name: Option<Vec<u8>>,
         addresses: Vec<SocketAddr>,
@@ -167,6 +167,7 @@ pub mod peer {
             extensions: Option<[u8; 4]>,
             name: Vec<u8>,
         ) {
+            // println!("HEEEEEERE");
             /*DONE */
             let mut active_peers = match active_peers.lock() {
                 Ok(active_peers) => active_peers,
@@ -174,6 +175,7 @@ pub mod peer {
             };
             match active_peers.addr_map.get_mut(&sock_addr) {
                 Some(peer) => {
+                    // println!("KEEP PEER ALIVE {:?}", peer);
                     /*Keep alive */
                     peer.set_timer();
                     return;
@@ -185,6 +187,7 @@ pub mod peer {
                         .set_name(name.clone())
                         .set_extensions(extensions)
                         .set_timer();
+                    // println!("PUSHING PEER {}", String::from_utf8(name).unwrap());
                     active_peers.push(&peer);
                     return;
                 }

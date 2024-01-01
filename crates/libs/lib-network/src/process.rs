@@ -1,7 +1,7 @@
 use core::panic;
 use std::collections::HashMap;
 use std::error;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ use lib_file::mk_fs::{self, MktFsNode};
 
 /*Chaque sous task du CLI lit passivement la process queue
 et push des paquets dans l'action queue en conséquence ?*/
-pub async fn process_task(
+pub fn process_task(
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     process_queue: Arc<RwLock<Queue<Action>>>,
@@ -64,15 +64,14 @@ pub async fn process_task(
                     the receive queue
                     */
 
-                    println!("process wait");
+                    // println!("process wait");
                     QueueState::set_empty_queue(Arc::clone(&process_queue_state));
                     process_queue_state.wait();
                     continue;
                 }
             };
         }
-    })
-    .await;
+    });
 }
 
 pub fn process_action(
@@ -102,7 +101,7 @@ pub fn process_action(
                 Arc::clone(&action_queue),
                 Action::SendHelloReply(
                     id,
-                    my_data.get_extensions().unwrap(),
+                    my_data.get_extensions(),
                     my_data.get_name().unwrap(),
                     sock_addr,
                 ),
@@ -185,6 +184,10 @@ pub fn process_action(
             /*to do */
             return;
         }
+        // Action::ProcessNatTraversalRequest(id, body, sock_addr) => {
+        //     /*Shouldn't receive ? */
+        //     return;
+        // }
         Action::ProcessHelloReply(extensions, name, sock_addr) => {
             /*DONE */
             ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
@@ -206,15 +209,75 @@ pub fn process_action(
         }
         Action::ProcessRootReply(root, sock_addr) => {
             /*DONE */
-            ActivePeers::set_peer_root(active_peers, sock_addr, root);
+            match ActivePeers::set_peer_root(active_peers, sock_addr, root) {
+                Ok(()) => {}
+                Err(PeerError::ResponseTimeout) => {
+                    Queue::lock_and_push(
+                        Arc::clone(&action_queue),
+                        Action::SendError(
+                            b"Connection timedout,
+                                             proceed to handshake again.\n"
+                                .to_vec(),
+                            sock_addr,
+                        ),
+                    );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::UnknownPeer) => {
+                    Queue::lock_and_push(
+                        Arc::clone(&action_queue),
+                        Action::SendError(
+                            b"Connection timedout,
+                                             proceed to handshake again.\n"
+                                .to_vec(),
+                            sock_addr,
+                        ),
+                    );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                _ => panic!("Unkown error in process_action\n"),
+            }
             return;
         }
         Action::ProcessDatum(datum, sock_addr) => {
+            /*DONE? */
+            return;
+        }
+        Action::ProcessNatTraversal(body, sock_addr) => {
+            let addr: SocketAddr;
+            if body.len() == 6 {
+                addr = SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(body[0], body[1], body[2], body[3])),
+                    ((body[4] as u16) * 256 + (body[5] as u16)),
+                );
+            } else if body.len() == 18 {
+                addr = SocketAddr::new(
+                    IpAddr::V6(Ipv6Addr::new(
+                        ((body[0] as u16) * 256 + (body[1] as u16)),
+                        ((body[2] as u16) * 256 + (body[3] as u16)),
+                        ((body[4] as u16) * 256 + (body[5] as u16)),
+                        ((body[6] as u16) * 256 + (body[7] as u16)),
+                        ((body[8] as u16) * 256 + (body[9] as u16)),
+                        ((body[10] as u16) * 256 + (body[11] as u16)),
+                        ((body[12] as u16) * 256 + (body[13] as u16)),
+                        ((body[14] as u16) * 256 + (body[15] as u16)),
+                    )),
+                    ((body[16] as u16) * 256 + (body[17] as u16)),
+                );
+            } else {
+                return;
+            }
+
+            Queue::lock_and_push(
+                Arc::clone(&action_queue),
+                Action::SendHello(my_data.get_extensions(), my_data.get_name().unwrap(), addr),
+            );
+            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+
             return;
         }
         _ => {
-            // Queue::lock_and_push(Arc::clone(&action_queue), Action::SendErrorReply(id, Some(b"Invalid packet format".to_vec()), sock_addr));
-            println!("Shouldn't happen: {:?}", action);
+            Queue::lock_and_push(Arc::clone(&action_queue), action);
         }
     }
 }

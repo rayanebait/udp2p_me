@@ -1,5 +1,5 @@
 use prelude::*;
-use std::default;
+use std::{default, fmt::Display};
 
 // use crate::peer_data::*;
 
@@ -9,10 +9,13 @@ use nanorand::{wyrand::WyRand, BufferedRng, Rng};
 use sha2::{Digest, Sha256};
 /*Utilities */
 use anyhow::Result;
-
+use hex::decode;
 /*Async/net libraries */
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use tokio::net::UdpSocket;
+
+pub const HASH_OF_EMPTY_STRING: &str =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 #[derive(Debug)]
 pub enum PacketError {
@@ -49,13 +52,33 @@ pub enum PacketType {
     PublicKey,
     Root,
     GetDatum,
-    NatTraversal,
+    NatTraversalRequest,
     ErrorReply = 128,
     HelloReply,
     PublicKeyReply,
     RootReply,
     Datum,
-    NatTraversalReply,
+    NatTraversal,
+}
+
+impl Display for PacketType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PacketType::NoOp => write!(f, "NoOp"),
+            PacketType::Hello => write!(f, "Hello"),
+            PacketType::HelloReply => write!(f, "HelloReply"),
+            PacketType::Error => write!(f, "Error"),
+            PacketType::ErrorReply => write!(f, "ErrorReply"),
+            PacketType::PublicKey => write!(f, "PublicKey"),
+            PacketType::PublicKeyReply => write!(f, "PublicKeyReply"),
+            PacketType::Root => write!(f, "Root"),
+            PacketType::RootReply => write!(f, "RootReply"),
+            PacketType::GetDatum => write!(f, "GetDatum"),
+            PacketType::Datum => write!(f, "Datum"),
+            PacketType::NatTraversalRequest => write!(f, "NatTraversalRequest"),
+            PacketType::NatTraversal => write!(f, "NatTraversal"),
+        }
+    }
 }
 
 impl PacketType {
@@ -67,13 +90,13 @@ impl PacketType {
             3 => return Ok(PacketType::PublicKey),
             4 => return Ok(PacketType::Root),
             5 => return Ok(PacketType::GetDatum),
-            6 => return Ok(PacketType::NatTraversal),
+            6 => return Ok(PacketType::NatTraversalRequest),
             128 => return Ok(PacketType::ErrorReply),
             129 => return Ok(PacketType::HelloReply),
             130 => return Ok(PacketType::PublicKeyReply),
             131 => return Ok(PacketType::RootReply),
             132 => return Ok(PacketType::Datum),
-            133 => return Ok(PacketType::NatTraversalReply),
+            133 => return Ok(PacketType::NatTraversal),
             _ => return Err(PacketError::NoTypeError),
         }
     }
@@ -168,8 +191,11 @@ impl PacketBuilder {
         hello_packet.unwrap()
     }
 
-    pub fn hello_reply_packet(id: &[u8; 4], extensions: &[u8; 4], name: Vec<u8>) -> Packet {
-        let mut body = extensions.to_vec();
+    pub fn hello_reply_packet(id: &[u8; 4], extensions: Option<[u8; 4]>, name: Vec<u8>) -> Packet {
+        let mut body = match extensions {
+            Some(extensions) => extensions.to_vec(),
+            None => vec![0, 0, 0, 0],
+        };
         let mut name = name.clone();
         body.append(&mut name);
         let hello_packet = PacketBuilder::new()
@@ -238,7 +264,7 @@ impl PacketBuilder {
     pub fn root_packet(root: Option<[u8; 32]>) -> Packet {
         let root = match root {
             Some(root) => root.to_vec(),
-            None => vec![],
+            None => hex::decode(HASH_OF_EMPTY_STRING).unwrap(),
         };
 
         let root_packet = PacketBuilder::new()
@@ -253,7 +279,7 @@ impl PacketBuilder {
     pub fn root_reply_packet(id: &[u8; 4], root: Option<[u8; 32]>) -> Packet {
         let root = match root {
             Some(root) => root.to_vec(),
-            None => vec![],
+            None => hex::decode(HASH_OF_EMPTY_STRING).unwrap(),
         };
 
         let root_packet = PacketBuilder::new()
@@ -284,6 +310,32 @@ impl PacketBuilder {
             .build();
 
         datum_packet.unwrap()
+    }
+    pub fn nat_traversal_request_packet(behind_nat_addr: Vec<u8>) -> Packet {
+        let nat_traversal_requet_packet = PacketBuilder::new()
+            .gen_id()
+            .body(behind_nat_addr)
+            .packet_type(PacketType::NatTraversalRequest)
+            .build();
+
+        nat_traversal_requet_packet.unwrap()
+    }
+    pub fn nat_traversal_request_from_addr_packet(behind_nat_addr: SocketAddr) -> Packet {
+        let raw_socketaddr = {
+            let ip_addr = behind_nat_addr.ip();
+            let port = behind_nat_addr.port();
+
+            let mut parse_sock_addr = match ip_addr {
+                IpAddr::V4(ip4_addr) => ip4_addr.octets().to_vec(),
+                IpAddr::V6(ip6_addr) => ip6_addr.octets().to_vec(),
+            };
+
+            parse_sock_addr.push((port >> 8) as u8);
+            parse_sock_addr.push((port & 0xff) as u8);
+            parse_sock_addr
+        };
+
+        PacketBuilder::nat_traversal_request_packet(raw_socketaddr)
     }
 
     pub fn packet_type(&mut self, packet_type: PacketType) -> &mut Self {

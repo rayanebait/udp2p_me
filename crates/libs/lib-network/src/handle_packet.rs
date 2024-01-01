@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::str::Bytes;
 use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock};
@@ -14,7 +15,7 @@ pub enum HandlingError {
     InvalidHashError,
 }
 
-pub async fn handle_packet_task(
+pub fn handle_packet_task(
     pending_ids: Arc<Mutex<PendingIds>>,
     receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     receive_queue_state: Arc<QueueState>,
@@ -40,7 +41,7 @@ pub async fn handle_packet_task(
                         receive queue is empty wait for the activity of
                         the receive queue
                     */
-                    println!("handle packet waits");
+                    // println!("handle packet waits");
                     QueueState::set_empty_queue(Arc::clone(&receive_queue_state));
                     receive_queue_state.wait();
                     continue;
@@ -55,12 +56,11 @@ pub async fn handle_packet_task(
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
                     continue;
                 }
-                Err(HandlingError::InvalidPacketError) => todo!(),
+                Err(HandlingError::InvalidPacketError) => return,
                 _ => panic!("Shouldn't happen"),
             };
         }
-    })
-    .await;
+    });
 }
 
 pub fn handle_packet(
@@ -68,7 +68,7 @@ pub fn handle_packet(
     socket_addr: SocketAddr,
     pending_ids: Arc<Mutex<PendingIds>>,
 ) -> Result<Action, HandlingError> {
-    let id_exists = PendingIds::id_exists_and_pop(Arc::clone(&pending_ids), &packet, socket_addr);
+    let id_exists = PendingIds::id_exists(Arc::clone(&pending_ids), &packet, socket_addr);
 
     match id_exists {
         /*Packet is a response */
@@ -95,6 +95,7 @@ fn handle_request_packet(
     pending_ids: Arc<Mutex<PendingIds>>, //should add self_info with public key root, etc..
 ) -> Result<Action, HandlingError> {
     let id = packet.get_id();
+    let body = packet.get_body();
     match packet.get_packet_type() {
         PacketType::NoOp => {
             println!("Received NoOp from peer at {}\n", socket_addr);
@@ -141,20 +142,23 @@ fn handle_request_packet(
                 socket_addr,
             ))
         }
-        PacketType::Root => Ok(Action::ProcessRoot(
-            *id,
-            match packet.get_body_length() {
-                /*Peer doesn't implement signatures */
-                0 => None,
-                /*Peer implements signatures */
-                _ => Some({
-                    let mut root: [u8; 32] = [0; 32];
-                    root.copy_from_slice(&packet.get_body().as_slice()[0..32]);
-                    root
-                }),
-            },
-            socket_addr,
-        )),
+        PacketType::Root => {
+            if body.len() < 32 {
+                return Ok(Action::SendErrorReply(
+                    *id,
+                    Some(b"root is too short".to_vec()),
+                    socket_addr,
+                ));
+            } else {
+                let mut root = [0u8; 32];
+                root.copy_from_slice(&body.as_slice()[0..32]);
+
+                if root == hex::decode(HASH_OF_EMPTY_STRING).unwrap().as_slice() {
+                    return Ok(Action::ProcessRoot(*id, None, socket_addr));
+                }
+                Ok(Action::ProcessRoot(*id, Some(root), socket_addr))
+            }
+        }
         /*Exports should have its own send/receive queue?*/
         PacketType::GetDatum => Ok(Action::ProcessGetDatum(
             *id,
@@ -177,14 +181,13 @@ fn handle_response_packet(
     socket_addr: SocketAddr,
     pending: Arc<Mutex<PendingIds>>,
 ) -> Result<Action, HandlingError> {
+    let body = packet.get_body();
     match packet.get_packet_type() {
         PacketType::ErrorReply => {
             let error_message = packet.get_body().to_owned();
-            println!("Received ErrorReply from peer at {}\n", socket_addr);
             Ok(Action::ProcessErrorReply(error_message, socket_addr))
         }
         PacketType::HelloReply => {
-            println!("Received HelloReply from peer at {}\n", socket_addr);
             let mut extensions: [u8; 4] = [0; 4];
             extensions.copy_from_slice(&packet.get_body().as_slice()[0..4]);
             let extensions = match extensions[3] {
@@ -196,7 +199,6 @@ fn handle_response_packet(
             Ok(Action::ProcessHelloReply(extensions, name, socket_addr))
         }
         PacketType::PublicKeyReply => {
-            println!("Received PublicKeyReply from peer at {}\n", socket_addr);
             Ok(Action::ProcessPublicKeyReply(
                 match packet.get_body_length() {
                     /*Peer doesn't implement signatures */
@@ -212,38 +214,39 @@ fn handle_response_packet(
             ))
         }
         PacketType::RootReply => {
-            println!("Receive RootReply from peer at {}\n", socket_addr);
-            Ok(Action::ProcessRootReply(
-                match packet.get_body_length() {
-                    /*Peer doesn't implement signatures */
-                    0 => None,
-                    /*Peer implements signatures */
-                    _ => Some({
-                        let mut root: [u8; 32] = [0; 32];
-                        root.copy_from_slice(&packet.get_body().as_slice()[0..32]);
-                        root
-                    }),
-                },
-                socket_addr,
-            ))
-        }
-        PacketType::Datum => {
-            println!("Receive Datum from peer at {}\n", socket_addr);
-            match packet.valid_hash() {
-                true => Ok(Action::ProcessDatum(
-                    packet.get_body().to_owned(),
+            if body.len() < 32 {
+                return Ok(Action::SendError(
+                    b"root is too short".to_vec(),
                     socket_addr,
-                )),
-                false => Err(HandlingError::InvalidHashError),
+                ));
+            } else {
+                let mut root = [0u8; 32];
+                root.copy_from_slice(&body.as_slice()[0..32]);
+
+                if root == hex::decode(HASH_OF_EMPTY_STRING).unwrap().as_slice() {
+                    return Ok(Action::ProcessRootReply(None, socket_addr));
+                }
+                Ok(Action::ProcessRootReply(Some(root), socket_addr))
             }
         }
-        PacketType::NatTraversalReply => {
-            println!("Receive NatTraversalReply from peer at {}\n", socket_addr);
-            Ok(Action::ProcessNatTraversalReply(
+        PacketType::Datum => match packet.valid_hash() {
+            true => Ok(Action::ProcessDatum(
                 packet.get_body().to_owned(),
                 socket_addr,
-            ))
+            )),
+            false => Err(HandlingError::InvalidHashError),
+        },
+        PacketType::NatTraversal => {
+            if socket_addr == "81.194.27.155:8443".parse().unwrap() {
+                println!("Received NatTraversal from server\n");
+                return Ok(Action::ProcessNatTraversal(
+                    packet.get_body().to_owned(),
+                    socket_addr,
+                ));
+            } else {
+                return Err(HandlingError::InvalidPacketError);
+            };
         }
-        _ => Err(HandlingError::InvalidPacketError),
+        _ => return Err(HandlingError::InvalidPacketError),
     }
 }

@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 
 use futures::Future;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::time::{sleep, Sleep};
 
 // use crate::{peer_data::*, packet};
@@ -244,6 +244,11 @@ impl std::fmt::Display for CongestionHandlerError {
     }
 }
 
+/*
+    Tracks the ids of the packet sent. The protocol
+    asserts that a response to a packet must have the
+    same id as the packet it responds to.
+*/
 #[derive(Default)]
 pub struct PendingIds {
     id_to_addr: HashMap<
@@ -251,67 +256,103 @@ pub struct PendingIds {
         (
             /*addr to which it was sent */
             SocketAddr,
+            /*for convenience */
+            PacketType,
             /*timeout timer */
-            Sleep,
-            /*Resending attempts */
+            Instant,
+            /*resending attempts */
             usize,
-            /*Attempted NatTraversal */
-            bool,
-            /*Has been answered, can pop now*/
-            bool,
+            // /*Attempted NatTraversal */
+            // bool,
         ),
     >,
+    id_to_packet: HashMap<[u8; 4], (Packet, SocketAddr)>, //attempted_nat_trav: HashMap<SocketAddr, bool>?
 }
 
 impl PendingIds {
     pub fn build_mutex() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(PendingIds::default()))
     }
-    pub fn launch_flusher_task(pending_ids: Arc<Mutex<PendingIds>>) {
-        tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_secs(1)).await;
-                let mut guard = match pending_ids.lock() {
-                    Ok(guard) => guard,
-                    Err(poison_error) => break,
-                };
 
-                let mut to_pop = vec![];
+    // /*Flushes the ids every 0.1 s, so that the resend task has
+    // time to check the unanswered ids and resend them */
+    // pub fn launch_flusher_task(pending_ids: Arc<Mutex<PendingIds>>) {
+    //     tokio::spawn(async move {
+    //         loop {
+    //             sleep(Duration::from_millis(100)).await;
+    //             let mut guard = match pending_ids.lock() {
+    //                 Ok(guard) => guard,
+    //                 Err(poison_error) => break,
+    //             };
 
-                for id in guard.id_to_addr.keys() {
-                    let (_, _, attempts, attempted_nat_trav, can_pop_key) =
-                        guard.id_to_addr.get(id).unwrap();
-                    if (*can_pop_key == false) && (*attempted_nat_trav == true) {
-                        to_pop.push(*id);
-                    }
-                }
-                for id in to_pop {
-                    guard.pop_packet_id(&id);
-                }
-            }
-        });
-    }
-    /*Each time a packet is sent, no access to raw packet so need Packet struct */
+    //             let mut to_pop = vec![];
+
+    //             for id in guard.id_to_addr.keys() {
+    //                 let (_, _, attempts, attempted_nat_trav, can_pop_key) =
+    //                     guard.id_to_addr.get(id).unwrap();
+    //                 if (*can_pop_key == false) && (*attempted_nat_trav == true) {
+    //                     to_pop.push(*id);
+    //                 }
+    //             }
+    //             for id in to_pop {
+    //                 guard.pop_packet_id(&id);
+    //             }
+    //         }
+    //     });
+    // }
+
+    /*
+        This function checks if the packet about it be sent has already
+        been sent before. If it is the case, increments the attempt number
+        associated to the id. Also checks if a NAT traversal has been attempted
+        with the given socket address.
+    */
+
     pub fn lock_and_add_id(
         pending_ids: Arc<Mutex<PendingIds>>,
-        id: &[u8; 4],
+        packet: &Packet,
         peer_addr: &SocketAddr,
     ) {
         let mut pending_ids_guard = match pending_ids.lock() {
-            Ok(pending_ids_guard) => pending_ids_guard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Ok(guard) => guard,
+            /*If Mutex is poisoned stop every thread, something is wrong */
+            Err(poison_error) => panic!("Poisoned Ids Mutex"),
         };
 
-        pending_ids_guard.id_to_addr.insert(
-            *id,
-            (*peer_addr, sleep(Duration::from_secs(1)), 0, false, false),
-        );
+        /*
+            Check if id exists before adding, doesn't check timer.
+            If a packet is in queue to resend. It means the timer
+            (RTO) has been checked.
+        */
+        match pending_ids_guard.search_id_mut(&packet) {
+            /*id exists */
+            Ok((sock_addr,packet_type, _, attempts)) => {
+                if *sock_addr != *peer_addr {
+                    return;
+                } else {
+                    *attempts += 1;
+                    return;
+                }
+            }
+            Err(CongestionHandlerError::NoPacketWithIdError) => {
+                pending_ids_guard.id_to_addr.insert(
+                    *packet.get_id(),
+                    (*peer_addr, *packet.get_packet_type(), Instant::now(), 0),
+                );
+                pending_ids_guard
+                    .id_to_packet
+                    .insert(*packet.get_id(), (packet.clone(), *peer_addr));
+                return;
+            }
+            _ => panic!("Shouldn't happen, handle packet"),
+        };
     }
 
-    /*Searches for an Id and sets it's can_pop status to true.
-    Now at the next call of flush,  */
-    /*Only handle packet task can set an Id to can_pop=true. */
-    pub fn id_exists_and_pop(
+    /*
+       This function is used to determine if
+       a packet is a response or a request.
+    */
+    pub fn id_exists(
         pending_ids: Arc<Mutex<PendingIds>>,
         packet: &Packet,
         socket_addr: SocketAddr,
@@ -325,10 +366,10 @@ impl PendingIds {
 
         /*Check if id exists */
         match pending_ids_guard.search_id(&packet) {
-            Ok(sock_addr) => {
+            Ok((sock_addr, ..)) => {
                 /*if id exists, pop the packet before handling it. */
                 /*We choose to not handle the collisions. */
-                pending_ids_guard.set_can_pop(packet.get_id());
+                pending_ids_guard.pop_packet_id(packet.get_id());
 
                 /*Now check if the address it was sent to is
                 the same as the address it was received from */
@@ -352,28 +393,97 @@ impl PendingIds {
         /*Mutex is dropped here */
     }
 
-    pub fn set_can_pop(&mut self, packet_id: &[u8; 4]){
-        let (_,_,_,_,mut can_pop) = self.id_to_addr.get_mut(packet_id).unwrap();
-        can_pop = true;
+    /*Because hashmaps are not made to be enumerated, this may be heavy.*/
+    /*Should ignore nat traversal requests */
+    pub fn packets_to_resend(
+        pending_ids: Arc<Mutex<PendingIds>>,
+    ) -> (Vec<SocketAddr>, Vec<(Packet, SocketAddr)>) {
+        println!("HERE");
+        let mut pending_ids_guard = match pending_ids.lock() {
+            Ok(guard) => guard,
+            /*If Mutex is poisoned stop every thread, something is wrong */
+            Err(poison_error) => panic!("Poisoned Ids Mutex"),
+        };
+
+        let mut id_to_resend = vec![];
+        let mut id_to_send_nat_trav = vec![];
+        let mut id_to_pop = vec![];
+
+        for (id, (addr, packet_type, rto, attempts)) in pending_ids_guard.id_to_addr.iter_mut() {
+            if *attempts > 5 {
+                id_to_pop.push(*id);
+                id_to_send_nat_trav.push(*id);
+            } else if rto.elapsed() > Duration::from_secs(1) {
+                if *packet_type != PacketType::NatTraversalRequest{
+                    id_to_resend.push(*id);
+                }
+            }
+        }
+
+        let mut addr_to_send_nat_trav = vec![];
+        println!("to pop {:?},\n to resend {:?}", id_to_pop, id_to_resend);
+        for id in id_to_pop {
+            pending_ids_guard.id_to_packet.remove(&id);
+            let (addr, ..) = pending_ids_guard.id_to_addr.remove(&id).unwrap();
+            addr_to_send_nat_trav.push(addr);
+        }
+
+        let packet_to_resend = {
+            let mut vec = vec![];
+            for id in &id_to_resend {
+                vec.push(pending_ids_guard.id_to_packet.get(id).unwrap().clone());
+            }
+            vec
+        };
+
+        // println!("packet to resend {:?}", packet_to_resend);
+
+        (addr_to_send_nat_trav, packet_to_resend)
     }
-    /*Each time a packet is received, it is received as raw bytes so access to Id directly*/
     pub fn pop_packet_id(&mut self, packet_id: &[u8; 4]) {
         self.id_to_addr.remove(packet_id);
+    }
+
+    pub fn search_id_raw_mut(
+        &mut self,
+        packet_id: &[u8; 4],
+    ) -> Result<(&mut SocketAddr, &mut PacketType, &mut Instant, &mut usize), CongestionHandlerError>
+    {
+        let addr = self.id_to_addr.get_mut(packet_id);
+
+        match addr {
+            Some((sock_addr, packet_type, timer, attempts)) => {
+                return Ok((sock_addr, packet_type, timer, attempts))
+            }
+            None => return Err(CongestionHandlerError::NoPacketWithIdError),
+        };
     }
 
     pub fn search_id_raw(
         &self,
         packet_id: &[u8; 4],
-    ) -> Result<(SocketAddr), CongestionHandlerError> {
+    ) -> Result<(SocketAddr, usize), CongestionHandlerError> {
         let addr = self.id_to_addr.get(packet_id);
 
         match addr {
-            Some((addr, ..)) => return Ok(addr.clone()),
+            Some((sock_addr, _, _, attempts)) => return Ok((*sock_addr, *attempts)),
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
     }
 
-    pub fn search_id(&self, packet: &Packet) -> Result<SocketAddr, CongestionHandlerError> {
+    pub fn search_id_mut(
+        &mut self,
+        packet: &Packet,
+    ) -> Result<(&mut SocketAddr, &mut PacketType, &mut Instant, &mut usize), CongestionHandlerError>
+    {
+        let id = packet.get_id();
+
+        self.search_id_raw_mut(id)
+    }
+    pub fn search_id(
+        &self,
+        packet: &Packet,
+    ) -> Result<(SocketAddr, usize), CongestionHandlerError> {
         let id = packet.get_id();
 
         self.search_id_raw(id)
