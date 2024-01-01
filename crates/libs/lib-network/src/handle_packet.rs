@@ -98,11 +98,9 @@ fn handle_request_packet(
     let body = packet.get_body();
     match packet.get_packet_type() {
         PacketType::NoOp => {
-            println!("Received NoOp from peer at {}\n", socket_addr);
             Ok(Action::ProcessNoOp(socket_addr))
         }
         PacketType::Error => {
-            println!("Received error from peer at {}\n", socket_addr);
             Ok(Action::ProcessError(
                 *id,
                 packet.get_body().to_owned(),
@@ -110,7 +108,6 @@ fn handle_request_packet(
             ))
         }
         PacketType::Hello => {
-            println!("Received hello from peer at {}\n", &socket_addr);
             /*change to process hello reply */
             {
                 let mut extensions: [u8; 4] = [0; 4];
@@ -126,7 +123,6 @@ fn handle_request_packet(
             }
         }
         PacketType::PublicKey => {
-            println!("Received PublicKey from peer at {}\n", socket_addr);
             Ok(Action::ProcessPublicKey(
                 *id,
                 match packet.get_body_length() {
