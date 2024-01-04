@@ -291,34 +291,102 @@ pub mod import_export {
         Ok(())
     }
 
-    /*Given a hash it downloads all files under it  */
+    #[async_recursion::async_recursion]
     pub async fn download(
         peek_process_queue: Arc<RwLock<Queue<Action>>>,
-        process_queue_state: Arc<QueueState>,
+        process_queue_readers_state: Arc<QueueState>,
         action_queue: Arc<Mutex<Queue<Action>>>,
         action_queue_state: Arc<QueueState>,
-        active_peers: Arc<Mutex<ActivePeers>>,
+        maps: Arc<
+            Mutex<(
+                HashMap<[u8; 32], [u8; 32]>,
+                HashMap<[u8; 32], Vec<[u8; 32]>>,
+                HashMap<[u8; 32], String>,
+            )>,
+        >,
         hash: [u8; 32],
         sock_addr: SocketAddr,
-    ) {
-        /*Peer has to have been handshaked before */
-        /*Constructs the whole tree structure without storing it */
-        // let hash_trees_or_error = fetch_subtree_from(
-        //     Arc::clone(&peek_process_queue),
-        //     Arc::clone(&process_queue_state),
-        //     Arc::clone(&action_queue),
-        //     Arc::clone(&action_queue_state),
-        //     Arc::clone(&active_peers),
-        //     hash,
-        //     sock_addr,
-        // )
-        // .await;
+    ) -> Result<(), PeerError> {
+        let mut subtasks = vec![];
+        let children: Option<Vec<[u8; 32]>>;
 
-        // let (parent_to_child_map, child_to_parent_map) = match hash_trees_or_error {
-        //     Ok(hash_trees)=> hash_trees,
-        //     Err(PeerError::ResponseTimeout)=> todo!(),
-        //     _=>todo!(),
-        // };
+        // Send a get datum with the first target hash
+        Queue::lock_and_push(
+            Arc::clone(&action_queue),
+            Action::SendGetDatumWithHash(*&hash, *&sock_addr),
+        );
+        QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+
+        match peek_until_datum_with_hash_from(
+            Arc::clone(&peek_process_queue),
+            Arc::clone(&process_queue_readers_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            *&hash,
+            *&sock_addr,
+        )
+        .await
+        {
+            Ok(datum_action) => {
+                // build the maps :
+                // - child -> parent
+                // - parent -> child
+                // - hash -> name
+                // and return the children if there are some
+                // - chunk -> no children
+                // - tree -> no children (fetching only the filesystem)
+                // - directory -> children
+                children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
+                    Ok(childs) => match childs {
+                        Some(childs) => Some(childs),
+                        None => None,
+                    },
+                    Err(PeerError::InvalidPacket) => return Err(PeerError::InvalidPacket),
+                    _ => {
+                        error!("Should not happen");
+                        panic!("Shouldn't happen")
+                    }
+                };
+            }
+            Err(PeerError::ResponseTimeout) => {
+                return Err(PeerError::ResponseTimeout);
+                // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
+            }
+            _ => todo!(),
+        };
+        match children {
+            Some(childs) => {
+                // let mut hash_vec = vec![];
+                for child_hash in childs {
+                    debug!("Asking for child {:?}", &child_hash);
+                    subtasks.push(fetch_subtree_from(
+                        Arc::clone(&peek_process_queue),
+                        Arc::clone(&process_queue_readers_state),
+                        Arc::clone(&action_queue),
+                        Arc::clone(&action_queue_state),
+                        Arc::clone(&maps),
+                        child_hash,
+                        sock_addr,
+                    ));
+                    // hash_vec.push(Action::SendGetDatumWithHash(child_hash, sock_addr));
+                }
+
+                // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
+            }
+            None => {
+                debug!("no childs");
+                return Ok(());
+            }
+        };
+        let completed = join_all(subtasks).await;
+        for result in completed {
+            match result {
+                Ok(()) => continue,
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn peek_until_datum_with_hash_from(

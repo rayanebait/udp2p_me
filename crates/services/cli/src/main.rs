@@ -150,14 +150,6 @@ async fn main() -> Result<()> {
                     Arc::clone(&action_queue),
                     Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
                 );
-                Queue::lock_and_push(
-                    Arc::clone(&action_queue),
-                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-                );
-                Queue::lock_and_push(
-                    Arc::clone(&action_queue),
-                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-                );
             }
             sleep(Duration::from_secs(1)).await;
             let peer_hash = {
