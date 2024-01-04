@@ -341,6 +341,14 @@ impl PendingIds {
         packet: &Packet,
         peer_addr: &SocketAddr,
     ) {
+        if packet.is(*&PacketType::NatTraversal) {
+            return
+        } else if packet.is(*&PacketType::NatTraversalRequest){
+            return
+        } else if packet.is_response() {
+            return
+        }
+
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,
             /*If Mutex is poisoned stop every thread, something is wrong */
@@ -391,6 +399,9 @@ impl PendingIds {
         packet: &Packet,
         socket_addr: SocketAddr,
     ) -> Result<SocketAddr, CongestionHandlerError> {
+        if *packet.get_packet_type() == PacketType::NatTraversal {
+            return Ok(socket_addr)
+        }
         /*get mutex to check and pop id if it is a response */
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,

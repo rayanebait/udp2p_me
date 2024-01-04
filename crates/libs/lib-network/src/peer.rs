@@ -110,7 +110,7 @@ impl Peer {
     pub fn has_timed_out(&self, time_out: u64)->Result<(), PeerError>{
         match self.timer {
             Some(timer)=> {
-                let elapsed_dur = Instant::now() - timer;
+                let elapsed_dur = Instant::now().duration_since(timer);
 
                 if elapsed_dur > Duration::from_millis(time_out){
                     return Err(PeerError::PeerTimedOut)
@@ -250,7 +250,7 @@ impl ActivePeers {
         };
 
         /*keep alive */
-        match peer.has_timed_out(1000) {
+        match peer.has_timed_out(3000) {
             /*Hasn't timed out */
             Ok(())=>{
                 peer.set_hash(root);

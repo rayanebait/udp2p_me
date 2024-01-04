@@ -24,7 +24,10 @@ pub fn receiver(
             is empty */
             let (sock_addr, packet) = match Packet::recv_from(&sock4).await {
                 Ok(packet_and_addr) => packet_and_addr,
-                _ => continue,
+                _ => {
+                    println!("continue");
+                    continue
+                }
             };
 
             println!(
@@ -41,7 +44,8 @@ pub fn receiver(
 }
 
 pub fn sender(
-    sock: Arc<UdpSocket>,
+    sock4: Arc<UdpSocket>,
+    // sock6: Arc<UdpSocket>,
     send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     send_queue_state: Arc<QueueState>,
     pending_ids_to_add: Arc<Mutex<PendingIds>>,
@@ -75,14 +79,14 @@ pub fn sender(
                     continue;
                 }
             };
+            
+            PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
+            packet.send_to_addr(&sock4, &sock_addr).await;
             println!(
                 "Sending {} packet to {}\n",
                 packet.get_packet_type(),
                 sock_addr
             );
-
-            PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
-            packet.send_to_addr(&sock, &sock_addr).await;
             // println!("Sending packet: {:?}\n", packet);
         }
     });

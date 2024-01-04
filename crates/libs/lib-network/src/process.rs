@@ -283,7 +283,6 @@ pub fn process_action(
                 Action::SendHello(my_data.get_extensions(), my_data.get_name().unwrap(), addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-
             return;
         }
         _ => {

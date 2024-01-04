@@ -75,7 +75,7 @@ pub fn handle_packet(
     let id_exists = PendingIds::id_exists(Arc::clone(&pending_ids), &packet, socket_addr);
 
     match id_exists {
-        /*Packet is a response */
+        /*Packet is a response, handles the case where packet is a nat traversal */
         Ok(sock_addr) => handle_response_packet(packet, socket_addr, pending_ids),
         /*Packet is a request */
         Err(CongestionHandlerError::NoPacketWithIdError) => {
@@ -168,7 +168,6 @@ fn handle_request_packet(
             },
             socket_addr,
         )),
-        PacketType::NatTraversal => Ok(Action::SendNoOp(socket_addr)),
         /*Invalid packet, should send error*/
         _ => Err(HandlingError::InvalidPacketError),
     }

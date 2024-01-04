@@ -663,7 +663,8 @@ mod tests {
                 action::Action::SendRoot(None, sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            receive_queue_state.wait();
+            process_queue_state.wait();
+            sleep(Duration::from_millis(100)).await;
             let guard = active_peers.lock().unwrap();
             let peer = guard.addr_map.get(&sock_addr).unwrap();
             peer.get_root_hash()
@@ -757,7 +758,8 @@ mod tests {
                 action::Action::SendRoot(None, sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            receive_queue_state.wait();
+            process_queue_state.wait();
+            sleep(Duration::from_millis(100)).await;
             let guard = active_peers.lock().unwrap();
             let peer = guard.addr_map.get(&sock_addr).unwrap();
             peer.get_root_hash().unwrap()
@@ -798,7 +800,7 @@ mod tests {
         //         .await
         //         .unwrap(),
         // );
-        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();

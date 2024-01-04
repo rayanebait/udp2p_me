@@ -400,13 +400,13 @@ impl Packet {
     pub fn is_response(&self) -> bool {
         let packet_type = self.packet_type as u8;
         match packet_type {
-            0..=7 => return true,
-            _ => return false,
+            0..=6 => return false,
+            _ => return true,
         }
     }
 
-    pub fn is(&self, other_packet_type: &PacketType) -> bool {
-        *self.get_packet_type() == *other_packet_type
+    pub fn is(&self, other_packet_type: PacketType) -> bool {
+        *self.get_packet_type() == other_packet_type
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
