@@ -27,7 +27,7 @@ pub fn receiver(
                 _ => continue,
             };
 
-            debug!(
+            println!(
                 "Received {} packet from {}\n",
                 packet.get_packet_type(),
                 sock_addr
@@ -75,7 +75,7 @@ pub fn sender(
                     continue;
                 }
             };
-            debug!(
+            println!(
                 "Sending {} packet to {}\n",
                 packet.get_packet_type(),
                 sock_addr

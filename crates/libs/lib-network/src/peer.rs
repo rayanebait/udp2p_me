@@ -250,7 +250,7 @@ impl ActivePeers {
         };
 
         /*keep alive */
-        match peer.has_timed_out(3000) {
+        match peer.has_timed_out(1000) {
             /*Hasn't timed out */
             Ok(())=>{
                 peer.set_hash(root);

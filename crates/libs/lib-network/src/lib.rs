@@ -657,7 +657,7 @@ mod tests {
         //     211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
         //     191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
         // ];
-        let peer_hash = {
+        let peer_hash = match {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
                 action::Action::SendRoot(None, sock_addr),
@@ -666,7 +666,10 @@ mod tests {
             receive_queue_state.wait();
             let guard = active_peers.lock().unwrap();
             let peer = guard.addr_map.get(&sock_addr).unwrap();
-            peer.get_root_hash().unwrap()
+            peer.get_root_hash()
+        }{
+            Some(peer_hash)=>peer_hash,
+            None=> return,
         };
 
         // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);

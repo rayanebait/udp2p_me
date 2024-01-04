@@ -218,7 +218,7 @@ pub fn process_action(
             /*DONE */
             match ActivePeers::set_peer_root(active_peers, sock_addr, root) {
                 Ok(()) => {}
-                Err(PeerError::ResponseTimeout) => {
+                Err(PeerError::PeerTimedOut) => {
                     Queue::lock_and_push(
                         Arc::clone(&action_queue),
                         Action::SendError(
