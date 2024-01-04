@@ -36,6 +36,8 @@ pub enum PeerError {
     UnknownExtension,
     #[error("Peer timed out")]
     PeerTimedOut,
+    #[error("No datum")]
+    NoDatum,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -110,7 +112,7 @@ impl Peer {
     pub fn has_timed_out(&self, time_out: u64)->Result<(), PeerError>{
         match self.timer {
             Some(timer)=> {
-                let elapsed_dur = Instant::now().duration_since(timer);
+                let elapsed_dur = timer.elapsed();
 
                 if elapsed_dur > Duration::from_millis(time_out){
                     return Err(PeerError::PeerTimedOut)
@@ -200,7 +202,6 @@ impl ActivePeers {
         extensions: Option<[u8; 4]>,
         name: Vec<u8>,
     ) {
-        // println!("HEEEEEERE");
         /*DONE */
         let mut active_peers = match active_peers.lock() {
             Ok(active_peers) => active_peers,
@@ -213,11 +214,13 @@ impl ActivePeers {
             Some(peer) => {
                 // println!("KEEP PEER ALIVE {:?}", peer);
                 /*Keep alive */
+                println!("EXIST");
                 peer.set_timer();
                 return;
             }
-            _ => {
+            None => {
                 /*Create peer */
+                println!("CREATE");
                 let mut peer = Peer::new();
                 peer.add_address(sock_addr)
                     .set_name(name.clone())

@@ -24,19 +24,18 @@ pub fn receiver4(
             let (sock_addr, packet) = match Packet::recv_from(&sock4).await {
                 Ok(packet_and_addr) => packet_and_addr,
                 _ => {
-                    println!("continue");
-                    continue
+                    continue;
                 }
             };
 
-            println!(
-                "Received {} packet from {}\n",
+            debug!(
+                "Received {} packet from {}: {:?}\n",
                 packet.get_packet_type(),
-                sock_addr
+                sock_addr,
+                packet
             );
-            /*Maybe should be async? */
-            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
 
+            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
             QueueState::set_non_empty_queue(Arc::clone(&receive_queue_state));
         }
     });
@@ -55,14 +54,15 @@ pub fn receiver6(
                 Ok(packet_and_addr) => packet_and_addr,
                 _ => {
                     println!("continue");
-                    continue
+                    continue;
                 }
             };
 
-            println!(
-                "Received {} packet from {}\n",
+            debug!(
+                "Received {} packet from {} : {:?}\n",
                 packet.get_packet_type(),
-                sock_addr
+                sock_addr,
+                packet
             );
             /*Maybe should be async? */
             Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
@@ -101,29 +101,36 @@ pub fn sender(
             let (packet, sock_addr) = match packet_for_addr {
                 Some(packet_for_addr) => packet_for_addr,
                 None => {
-                    // println!("sender wait");
                     QueueState::set_empty_queue(Arc::clone(&send_queue_state));
+                    /*Passively wait for non empty queue state */
                     send_queue_state.wait();
-                    // sleep(std::time::Duration::from_secs(1));
                     continue;
                 }
             };
-            
+
             PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
-            match sock_addr {
-                SocketAddr::V4(_)=>{
-                    packet.send_to_addr(&sock4, &sock_addr).await;
-                } 
-                SocketAddr::V6(_)=>{
-                    packet.send_to_addr(&sock6, &sock_addr).await;
+            let sent = match sock_addr {
+                SocketAddr::V4(_) => packet.send_to_addr(&sock4, &sock_addr).await,
+                SocketAddr::V6(_) => packet.send_to_addr(&sock6, &sock_addr).await,
+            };
+
+            match sent {
+                Ok(size) => {
+                    debug!(
+                        "Sending {} packet to {}\n",
+                        packet.get_packet_type(),
+                        sock_addr
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "error socket: {}, socketaddr: {}",
+                        sock6.local_addr().unwrap().is_ipv6(),
+                        sock_addr.is_ipv6()
+                    );
+                    error!("{}", e)
                 }
             }
-            println!(
-                "Sending {} packet to {}\n",
-                packet.get_packet_type(),
-                sock_addr
-            );
-            // println!("Sending packet: {:?}\n", packet);
         }
     });
 }

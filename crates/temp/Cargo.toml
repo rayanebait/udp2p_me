@@ -10,6 +10,8 @@ tokio = { version = "1.35.0", features = ["tokio-macros", "rt-multi-thread", "ma
 lib-web = {path = "../libs/lib-web"}
 reqwest = "0.11.22"
 tokio-macros = "2.2.0"
+sha2 = "0.10.8"
+hex = "0.4.3"
 
 [lints]
 workspace = true

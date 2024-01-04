@@ -53,12 +53,13 @@ pub enum PacketType {
     Root,
     GetDatum,
     NatTraversalRequest,
+    NatTraversal,
     ErrorReply = 128,
     HelloReply,
     PublicKeyReply,
     RootReply,
     Datum,
-    NatTraversal,
+    NoDatum,
 }
 
 impl Display for PacketType {
@@ -75,6 +76,7 @@ impl Display for PacketType {
             PacketType::RootReply => write!(f, "RootReply"),
             PacketType::GetDatum => write!(f, "GetDatum"),
             PacketType::Datum => write!(f, "Datum"),
+            PacketType::NoDatum => write!(f, "NoDatum"),
             PacketType::NatTraversalRequest => write!(f, "NatTraversalRequest"),
             PacketType::NatTraversal => write!(f, "NatTraversal"),
         }
@@ -91,12 +93,13 @@ impl PacketType {
             4 => return Ok(PacketType::Root),
             5 => return Ok(PacketType::GetDatum),
             6 => return Ok(PacketType::NatTraversalRequest),
+            7 => return Ok(PacketType::NatTraversal),
             128 => return Ok(PacketType::ErrorReply),
             129 => return Ok(PacketType::HelloReply),
             130 => return Ok(PacketType::PublicKeyReply),
             131 => return Ok(PacketType::RootReply),
             132 => return Ok(PacketType::Datum),
-            133 => return Ok(PacketType::NatTraversal),
+            133 => return Ok(PacketType::NoDatum),
             _ => return Err(PacketError::NoTypeError),
         }
     }
@@ -310,6 +313,15 @@ impl PacketBuilder {
             .build();
 
         datum_packet.unwrap()
+    }
+    pub fn nodatum_packet(id: &[u8; 4]) -> Packet {
+        let nodatum_packet = PacketBuilder::new()
+            .set_id(*id)
+            .body(vec![])
+            .packet_type(PacketType::GetDatum)
+            .build();
+
+        nodatum_packet.unwrap()
     }
     pub fn nat_traversal_request_packet(behind_nat_addr: Vec<u8>) -> Packet {
         let nat_traversal_requet_packet = PacketBuilder::new()

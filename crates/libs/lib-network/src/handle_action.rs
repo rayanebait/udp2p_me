@@ -146,6 +146,13 @@ pub fn handle_action(
             QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
             return;
         }
+        Action::SendNoDatum(id, sock_addr) => {
+            /*DONE */
+            let packet = PacketBuilder::nodatum_packet(&id);
+            Queue::lock_and_push(Arc::clone(&send_queue), (packet, sock_addr));
+            QueueState::set_non_empty_queue(Arc::clone(&send_queue_state));
+            return;
+        }
         _ => {
             /*TO DO*/
             error!("Shouldn't happen if not planned.");

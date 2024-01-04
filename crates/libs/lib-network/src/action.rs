@@ -15,6 +15,7 @@ pub enum Action {
     SendPublicKeyReply([u8; 4], Option<[u8; 64]>, SocketAddr),
     SendErrorReply([u8; 4], Option<Vec<u8>>, SocketAddr),
     SendDatumWithHash([u8; 4], [u8; 32], Vec<u8>, SocketAddr),
+    SendNoDatum([u8;4], SocketAddr),
 
     ProcessNoOp(SocketAddr),
     ProcessHello([u8; 4], Option<[u8; 4]>, Vec<u8>, SocketAddr),
@@ -22,11 +23,12 @@ pub enum Action {
     ProcessPublicKey([u8; 4], Option<[u8; 64]>, SocketAddr),
     ProcessRoot([u8; 4], Option<[u8; 32]>, SocketAddr),
     ProcessGetDatum([u8; 4], [u8; 32], SocketAddr),
+    ProcessNatTraversal(Vec<u8>, SocketAddr),
 
     ProcessHelloReply(Option<[u8; 4]>, Vec<u8>, SocketAddr),
     ProcessErrorReply(Vec<u8>, SocketAddr),
     ProcessRootReply(Option<[u8; 32]>, SocketAddr),
     ProcessPublicKeyReply(Option<[u8; 64]>, SocketAddr),
     ProcessDatum(Vec<u8>, SocketAddr),
-    ProcessNatTraversal(Vec<u8>, SocketAddr),
+    ProcessNoDatum(SocketAddr),
 }

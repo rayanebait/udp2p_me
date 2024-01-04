@@ -19,8 +19,7 @@ use std::{
 /*Remark: Packets/ids are popped only when received. */
 pub fn resend_task(
     pending_ids: Arc<Mutex<PendingIds>>,
-    // pending_ids_state: Arc<QueueState>,
-    peek_active_peers: Arc<Mutex<ActivePeers>>,
+    // peek_active_peers: Arc<Mutex<ActivePeers>>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
 ) {
@@ -30,7 +29,7 @@ pub fn resend_task(
         let server_socket_addr6: SocketAddr =
             "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         loop {
-            sleep(Duration::from_secs(1));
+            sleep(Duration::from_millis(500));
             // pending_ids_state.wait();
             let (addr_to_send_nat_trav, packet_to_resend) =
                 PendingIds::packets_to_resend(Arc::clone(&pending_ids));

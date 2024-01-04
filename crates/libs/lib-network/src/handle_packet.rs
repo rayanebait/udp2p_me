@@ -31,6 +31,11 @@ pub fn handle_packet_task(
                 /*receive queue is not empty get a packet and handle it*/
                 /*verif packet? */
                 {
+                    // println!(
+                    //     "Received {} packet from {}\n",
+                    //     packet.get_packet_type(),
+                    //     sock_addr,
+                    // );
                     handle_packet(
                         packet,
                         sock_addr,
@@ -52,12 +57,15 @@ pub fn handle_packet_task(
             match action_or_error {
                 Ok(action) => {
                     /* we have an action, push it to the queue*/
-                    Queue::write_lock_and_push(Arc::clone(&process_queue), action);
+                    Queue::write_lock_and_push(Arc::clone(&process_queue), action.clone());
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
                     continue;
                 }
-                Err(HandlingError::InvalidPacketError) => return,
+                Err(HandlingError::InvalidPacketError) => {
+                    debug!("[handle packet task] Invalid packet error");
+                    return
+                }
                 _ => {
                     error!("Should not happen");
                     panic!("Shouldn't happen")
@@ -76,10 +84,24 @@ pub fn handle_packet(
 
     match id_exists {
         /*Packet is a response, handles the case where packet is a nat traversal */
-        Ok(sock_addr) => handle_response_packet(packet, socket_addr, pending_ids),
+        Ok(sock_addr) => {
+            if packet.is_response() {
+                handle_response_packet(packet, socket_addr, pending_ids)
+            } else {
+                Err(HandlingError::InvalidPacketError)
+            }
+        }
         /*Packet is a request */
         Err(CongestionHandlerError::NoPacketWithIdError) => {
-            handle_request_packet(packet, socket_addr, pending_ids)
+            if packet.is_response() {
+                Ok(Action::SendErrorReply(
+                    *packet.get_id(),
+                    Some(b"Invalid id".to_vec()),
+                    socket_addr,
+                ))
+            } else {
+                handle_request_packet(packet, socket_addr, pending_ids)
+            }
         }
 
         /*Id is known but now Peer: discard packet.
@@ -168,8 +190,21 @@ fn handle_request_packet(
             },
             socket_addr,
         )),
+        PacketType::NatTraversal => {
+            if socket_addr == "81.194.27.155:8443".parse().unwrap() {
+                debug!("Received NatTraversal from server\n");
+                return Ok(Action::ProcessNatTraversal(
+                    packet.get_body().to_owned(),
+                    socket_addr,
+                ));
+            } else {
+                return Err(HandlingError::InvalidPacketError);
+            };
+        }
         /*Invalid packet, should send error*/
-        _ => Err(HandlingError::InvalidPacketError),
+        _ => {
+            Err(HandlingError::InvalidPacketError)
+        }
     }
 }
 
@@ -234,17 +269,9 @@ fn handle_response_packet(
             )),
             false => Err(HandlingError::InvalidHashError),
         },
-        PacketType::NatTraversal => {
-            if socket_addr == "81.194.27.155:8443".parse().unwrap() {
-                debug!("Received NatTraversal from server\n");
-                return Ok(Action::ProcessNatTraversal(
-                    packet.get_body().to_owned(),
-                    socket_addr,
-                ));
-            } else {
-                return Err(HandlingError::InvalidPacketError);
-            };
+        PacketType::NoDatum => Ok(Action::ProcessNoDatum(socket_addr)),
+        _ => {
+            return Err(HandlingError::InvalidPacketError)
         }
-        _ => return Err(HandlingError::InvalidPacketError),
     }
 }

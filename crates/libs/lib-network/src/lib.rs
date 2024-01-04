@@ -250,6 +250,7 @@ pub mod import_export {
                     }
                 };
             }
+            Err(PeerError::NoDatum) => children = None,
             Err(PeerError::ResponseTimeout) => {
                 return Err(PeerError::ResponseTimeout);
                 // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
@@ -401,6 +402,7 @@ pub mod import_export {
                             continue;
                         }
                     }
+                    Action::ProcessNoDatum(addr) => break Err(PeerError::NoDatum),
                     _ => continue,
                 }
             }
@@ -457,6 +459,10 @@ pub mod import_export {
 
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv6Addr;
+
+    use futures::future::join;
+
     use {
         super::*,
         crate::{
@@ -607,10 +613,31 @@ mod tests {
         sleep(Duration::from_secs(1000));
     }
 
+    /*Currently seems to sometime not be able to register peer.
+    Sometimes when receiving helloreply, doesn't even attempt to create peer.  */
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_tree() {
-        let sock6 = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        /*DON'T USE ::1 for ipv6. Doesn't work. Seems like it 
+        binds to an ipv6 compatible ipv4 address and not a true 
+        ipv6 address so the socket doesn't send anything. */
+        // let sock6 = Arc::new(
+        //     UdpSocket::bind(SocketAddr::new(
+        //         "::1".parse().unwrap(),
+        //         0,
+        //     ))
+        //     .await
+        //     .unwrap(),
+        // );
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new(
+                "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
+                0,
+            ))
+            .await
+            .unwrap(),
+        );
+
         let maps = build_tree_mutex();
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
@@ -626,15 +653,21 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
+        task_launcher(
+            queues,
+            active_peers.clone(),
+            my_data.clone(),
+            sock4.clone(),
+            sock6.clone(),
+        );
 
         /*jch */
-        let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
-        // let sock_addr: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
+        let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        let server_sock_addr6: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         /*Pas derriere un nat */
-        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
+        let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
@@ -642,41 +675,51 @@ mod tests {
         {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr6),
+            );
+            Queue::lock_and_push(
+                Arc::clone(&action_queue),
+                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
             );
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
                 action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
             );
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-            );
+            QueueState::set_non_empty_queue(action_queue_state.clone());
         }
-        sleep(Duration::from_secs(1)).await;
         // let hash = [
         //     211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
         //     191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
         // ];
         let peer_hash = match {
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendRoot(None, sock_addr),
-            );
-            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            process_queue_state.wait();
-            sleep(Duration::from_millis(100)).await;
-            let guard = active_peers.lock().unwrap();
-            /*If panics here, means the packet received had invalid hash (body length<32) */
-            let peer = guard.addr_map.get(&sock_addr).unwrap();
-            peer.get_root_hash()
-        }{
-            Some(peer_hash)=>peer_hash,
-            None=> return,
+            let mut attempt = 0;
+            loop {
+                if attempt < 4 {
+                    attempt += 1;
+                } else {
+                    break None;
+                }
+                Queue::lock_and_push(
+                    Arc::clone(&action_queue),
+                    action::Action::SendRoot(None, sock_addr),
+                );
+                QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                process_queue_state.wait();
+                sleep(Duration::from_millis(100)).await;
+                let guard = active_peers.lock().unwrap();
+                /*If panics here, means the packet received had invalid hash (body length<32) */
+                match guard.addr_map.get(&sock_addr) {
+                    Some(peer) => break peer.get_root_hash(),
+                    None => continue,
+                }
+            }
+        } {
+            Some(peer_hash) => peer_hash,
+            None => return,
         };
 
         // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);
-        fetch_subtree_from(
+        let fetch1 = fetch_subtree_from(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
@@ -685,8 +728,20 @@ mod tests {
             // yoan_hash,
             peer_hash,
             sock_addr,
-        )
-        .await;
+        );
+        fetch1.await;
+        // let fetch2 = fetch_subtree_from(
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_readers_state),
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&maps),
+        //     // yoan_hash,
+        //     peer_hash,
+        //     sock_addr,
+        // );
+
+        // join!(fetch1, fetch2);
 
         // let child_hash: [u8; 32] = [
         //     115, 50, 75, 0, 182, 12, 186, 29, 161, 254, 249, 93, 93, 212, 161, 125, 206, 44, 148,
@@ -705,7 +760,11 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_file() {
-        let sock6 = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
+                .await
+                .unwrap(),
+        );
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();
@@ -722,7 +781,13 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
+        task_launcher(
+            queues,
+            active_peers.clone(),
+            my_data.clone(),
+            sock4.clone(),
+            sock6.clone(),
+        );
 
         /*jch */
         let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
@@ -817,7 +882,13 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
+        task_launcher(
+            queues,
+            active_peers.clone(),
+            my_data.clone(),
+            sock4.clone(),
+            sock6.clone(),
+        );
 
         /*jch */
         let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
@@ -883,7 +954,13 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
+        task_launcher(
+            queues,
+            active_peers.clone(),
+            my_data.clone(),
+            sock4.clone(),
+            sock6.clone(),
+        );
 
         /*jch */
         let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();

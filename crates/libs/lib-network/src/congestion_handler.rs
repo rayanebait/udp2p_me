@@ -97,20 +97,20 @@ impl QueueState {
 
 pub struct Queue<T> {
     data: VecDeque<T>,
-    can_pop: bool,
+    // can_pop: bool,
 }
 
 impl<T: Clone> Queue<T> {
     fn build_mutex() -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self {
             data: VecDeque::new(),
-            can_pop: true,
+            // can_pop: true,
         }))
     }
     fn build_rwlock() -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self {
             data: VecDeque::new(),
-            can_pop: false,
+            // can_pop: false,
         }))
     }
 
@@ -134,7 +134,7 @@ impl<T: Clone> Queue<T> {
             }
         };
 
-        queue_guard.can_pop = true;
+        // queue_guard.can_pop = true;
         queue_guard.get_front()
     }
 
@@ -149,12 +149,12 @@ impl<T: Clone> Queue<T> {
 
         /*Only the pusher can pop the data,
         some privileged reader can set can_pop to true */
-        if queue_guard.can_pop {
-            queue_guard.pop_front();
+        // if queue_guard.can_pop {
+        //     queue_guard.pop_front();
+        //     queue_guard.push_back(data);
+        // } else {
             queue_guard.push_back(data);
-        } else {
-            queue_guard.push_back(data);
-        }
+        // }
     }
     pub fn lock_and_push(queue: Arc<Mutex<Queue<T>>>, data: T) {
         let mut queue_guard = match queue.lock() {
@@ -189,11 +189,11 @@ impl<T: Clone> Queue<T> {
             }
         };
 
-        if queue_guard.can_pop {
+        // if queue_guard.can_pop {
             queue_guard.pop_front()
-        } else {
-            queue_guard.peek_front()
-        }
+        // } else {
+        //     queue_guard.peek_front()
+        // }
     }
     pub fn lock_and_pop(queue: Arc<Mutex<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.lock() {
@@ -344,6 +344,10 @@ impl PendingIds {
         if packet.is(*&PacketType::NatTraversal) {
             return
         } else if packet.is(*&PacketType::NatTraversalRequest){
+            return
+        }else if packet.is(*&PacketType::Error){
+            return
+        }else if packet.is(*&PacketType::ErrorReply){
             return
         } else if packet.is_response() {
             return

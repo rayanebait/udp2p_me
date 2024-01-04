@@ -51,12 +51,13 @@ pub fn process_task(
                     /*action queue is not empty get an action and handle it*/
                     // println!("process: {:?}\n", action);
                     process_action(
-                        action,
+                        action.clone(),
                         Arc::clone(&action_queue),
                         Arc::clone(&action_queue_state),
                         Arc::clone(&active_peers),
                         Arc::clone(&my_data),
                     );
+                    debug!("{:?}", action)
                     /*return the action required */
                 }
                 None => {
@@ -131,7 +132,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::ResponseTimeout) => {
+                Err(PeerError::PeerTimedOut) => {
                     Queue::lock_and_push(
                         Arc::clone(&action_queue),
                         Action::SendErrorReply(
@@ -164,7 +165,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::ResponseTimeout) => {
+                Err(PeerError::PeerTimedOut) => {
                     Queue::lock_and_push(
                         Arc::clone(&action_queue),
                         Action::SendErrorReply(
@@ -188,6 +189,8 @@ pub fn process_action(
             return;
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
+            Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
+            QueueState::set_non_empty_queue(action_queue_state.clone());
             /*to do */
             return;
         }
@@ -211,7 +214,28 @@ pub fn process_action(
         }
         Action::ProcessPublicKeyReply(public_key, sock_addr) => {
             /*DONE */
-            ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key);
+            match ActivePeers::set_peer_public_key(active_peers, sock_addr, public_key) {
+                Ok(()) => {}
+                Err(PeerError::PeerTimedOut) => {
+                    Queue::lock_and_push(
+                        Arc::clone(&action_queue),
+                        Action::SendError(
+                            b"Connection timedout,
+                                             proceed to handshake again.\n"
+                                .to_vec(),
+                            sock_addr,
+                        ),
+                    );
+                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                }
+                Err(PeerError::UnknownPeer) => {
+                    ()
+                }
+                Err(e) => {
+                    error!("{e}");
+                    panic!("Unkown error in process_action {}\n", e)
+                }
+            }
             return;
         }
         Action::ProcessRootReply(root, sock_addr) => {
@@ -231,16 +255,7 @@ pub fn process_action(
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
                 Err(PeerError::UnknownPeer) => {
-                    Queue::lock_and_push(
-                        Arc::clone(&action_queue),
-                        Action::SendError(
-                            b"Connection timedout,
-                                             proceed to handshake again.\n"
-                                .to_vec(),
-                            sock_addr,
-                        ),
-                    );
-                    QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                    ()
                 }
                 Err(e) => {
                     error!("{e}");
@@ -250,6 +265,10 @@ pub fn process_action(
             return;
         }
         Action::ProcessDatum(datum, sock_addr) => {
+            /*DONE? */
+            return;
+        }
+        Action::ProcessNoDatum(sock_addr) => {
             /*DONE? */
             return;
         }
