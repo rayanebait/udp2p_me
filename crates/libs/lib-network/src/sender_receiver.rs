@@ -12,9 +12,8 @@ use crate::packet::{Packet, PacketError};
     Maybe lock only first and last element ? sender accesses only the first
     handle action accesses only the last
 */
-pub fn receiver(
+pub fn receiver4(
     sock4: Arc<UdpSocket>,
-    // sock6: Arc<UdpSocket>,
     receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     receive_queue_state: Arc<QueueState>,
 ) {
@@ -43,9 +42,39 @@ pub fn receiver(
     });
 }
 
+pub fn receiver6(
+    sock6: Arc<UdpSocket>,
+    receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
+    receive_queue_state: Arc<QueueState>,
+) {
+    tokio::spawn(async move {
+        loop {
+            /*Get the first packet in the Queue or None if the queue
+            is empty */
+            let (sock_addr, packet) = match Packet::recv_from(&sock6).await {
+                Ok(packet_and_addr) => packet_and_addr,
+                _ => {
+                    println!("continue");
+                    continue
+                }
+            };
+
+            println!(
+                "Received {} packet from {}\n",
+                packet.get_packet_type(),
+                sock_addr
+            );
+            /*Maybe should be async? */
+            Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
+
+            QueueState::set_non_empty_queue(Arc::clone(&receive_queue_state));
+        }
+    });
+}
+
 pub fn sender(
     sock4: Arc<UdpSocket>,
-    // sock6: Arc<UdpSocket>,
+    sock6: Arc<UdpSocket>,
     send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     send_queue_state: Arc<QueueState>,
     pending_ids_to_add: Arc<Mutex<PendingIds>>,
@@ -81,7 +110,14 @@ pub fn sender(
             };
             
             PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
-            packet.send_to_addr(&sock4, &sock_addr).await;
+            match sock_addr {
+                SocketAddr::V4(_)=>{
+                    packet.send_to_addr(&sock4, &sock_addr).await;
+                } 
+                SocketAddr::V6(_)=>{
+                    packet.send_to_addr(&sock6, &sock_addr).await;
+                }
+            }
             println!(
                 "Sending {} packet to {}\n",
                 packet.get_packet_type(),

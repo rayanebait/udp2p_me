@@ -11,7 +11,7 @@ use {
         packet::Packet,
         peer::{ActivePeers, Peer},
         process::process_task,
-        sender_receiver::{receiver, sender},
+        sender_receiver::{receiver4, receiver6, sender},
     },
     std::{
         net::SocketAddr,
@@ -35,7 +35,8 @@ pub fn task_launcher(
     ),
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: Arc<Peer>,
-    sock: Arc<UdpSocket>,
+    sock4: Arc<UdpSocket>,
+    sock6: Arc<UdpSocket>,
 ) {
     let (
         receive_queue,
@@ -75,13 +76,19 @@ pub fn task_launcher(
     );
 
     tokio::spawn(async move {
-        let receiving = receiver(
-            Arc::clone(&sock),
+        receiver4(
+            Arc::clone(&sock4),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
         );
 
-        let handling = handle_packet_task(
+        receiver6(
+            Arc::clone(&sock6),
+            Arc::clone(&receive_queue),
+            Arc::clone(&receive_queue_state),
+        );
+
+        handle_packet_task(
             Arc::clone(&pending_ids),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
@@ -89,7 +96,7 @@ pub fn task_launcher(
             Arc::clone(&process_queue_state),
             Arc::clone(&process_queue_readers_state),
         );
-        let processing_two = handle_action_task(
+        handle_action_task(
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&action_queue),
@@ -97,7 +104,7 @@ pub fn task_launcher(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
         );
-        let processing_one = process_task(
+        process_task(
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&process_queue),
@@ -107,12 +114,15 @@ pub fn task_launcher(
             // Arc::clone(&map)
         );
 
-        let sending = sender(
-            Arc::clone(&sock),
+        sender(
+            Arc::clone(&sock4),
+            Arc::clone(&sock6),
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&pending_ids),
         );
-        let resending = resend_task(pending_ids, active_peers, send_queue, send_queue_state);
+        resend_task(pending_ids, active_peers, send_queue, send_queue_state);
     });
 }
+
+pub fn task_canceller() {}

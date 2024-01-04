@@ -125,7 +125,8 @@ async fn main() -> Result<()> {
                 Ok(h) => h,
                 Err(e) => bail!("Failed to decode root hash. Please check your input."),
             };
-            let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+            let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+            let sock6 = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
             let maps = build_tree_mutex();
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
@@ -141,7 +142,7 @@ async fn main() -> Result<()> {
             my_data.set_name(vec![97, 110, 105, 116]);
             let my_data = Arc::new(my_data);
 
-            task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+            task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
 
             /*jch */
             let sock_addr: SocketAddr = peer.parse().unwrap();

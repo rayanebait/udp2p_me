@@ -521,7 +521,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn register_and_export() {
-        let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
+        let sock4 = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
         let tree = MktFsNode::try_from_path(
@@ -552,8 +552,8 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data.clone());
 
-        let receiving = receiver(
-            Arc::clone(&sock),
+        let receiving = receiver4(
+            Arc::clone(&sock4),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
         );
@@ -585,7 +585,8 @@ mod tests {
         );
 
         let sending = sender(
-            Arc::clone(&sock),
+            Arc::clone(&sock4),
+            Arc::clone(&sock4),
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&pending_ids),
@@ -608,8 +609,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_tree() {
-        // let sock = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock6 = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
+        let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
@@ -625,7 +626,7 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
 
         /*jch */
         let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
@@ -703,8 +704,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_file() {
-        // let sock = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock6 = Arc::new(UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000) ).await.unwrap());
+        let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
@@ -720,7 +721,7 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
 
         /*jch */
         let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
@@ -795,13 +796,13 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn keep_alive() {
-        // let sock = Arc::new(
-        //     UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
-        //         .await
-        //         .unwrap(),
-        // );
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
+                .await
+                .unwrap(),
+        );
         // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
@@ -815,7 +816,7 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
 
         /*jch */
         let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
@@ -863,12 +864,12 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn attempt_nat_traversal() {
-        // let sock = Arc::new(
-        //     UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
-        //         .await
-        //         .unwrap(),
-        // );
-        let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
+                .await
+                .unwrap(),
+        );
+        let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         let maps = build_tree_mutex();
         let queues = build_queues();
@@ -881,7 +882,7 @@ mod tests {
         my_data.set_name(vec![97, 110, 105, 116]);
         let my_data = Arc::new(my_data);
 
-        task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+        task_launcher(queues, active_peers.clone(), my_data.clone(), sock4.clone(), sock6.clone());
 
         /*jch */
         let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
