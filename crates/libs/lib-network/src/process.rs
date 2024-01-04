@@ -8,6 +8,7 @@ use std::time::Duration;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use futures::Future;
+use log::{debug, error, info, warn};
 use tokio::join;
 use tokio::select;
 use tokio::task::{JoinError, JoinHandle};
@@ -15,7 +16,7 @@ use tokio::time::{sleep, Sleep};
 
 use crate::action::Action;
 use crate::packet::PacketBuilder;
-use crate::peer::peer::*;
+use crate::peer::*;
 use crate::store::{
     build_tree_maps, get_child_to_parent_hashmap, get_hash_to_name_hashmap,
     get_parent_to_child_hashmap,
@@ -113,7 +114,7 @@ pub fn process_action(
         }
         Action::ProcessError(id, error_msg, sock_addr) => {
             /*DONE */
-            println!(
+            debug!(
                 "Received Error with body: {}\n from {}\n",
                 String::from_utf8(error_msg).unwrap(),
                 sock_addr
@@ -146,7 +147,10 @@ pub fn process_action(
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
                 Err(PeerError::UnknownPeer) => (),
-                _ => panic!("Unkown error in process_action\n"),
+                Err(e) => {
+                    error!("{e}");
+                    panic!("Unkown error in process_action {}\n", e)
+                }
             }
             return;
         }
@@ -176,7 +180,10 @@ pub fn process_action(
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
                 Err(PeerError::UnknownPeer) => (),
-                _ => panic!("Unkown error in process_action\n"),
+                Err(e) => {
+                    error!("{e}");
+                    panic!("Unkown error in process_action {}\n", e)
+                }
             }
             return;
         }
@@ -195,7 +202,7 @@ pub fn process_action(
         }
         Action::ProcessErrorReply(err_msg_reply, sock_addr) => {
             /*DONE */
-            println!(
+            debug!(
                 "Received ErrorReply packet with message:{}\n From {}\n",
                 String::from_utf8_lossy(&err_msg_reply),
                 sock_addr
@@ -235,7 +242,10 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                _ => panic!("Unkown error in process_action\n"),
+                Err(e) => {
+                    error!("{e}");
+                    panic!("Unkown error in process_action {}\n", e)
+                }
             }
             return;
         }

@@ -13,10 +13,10 @@ pub mod task_launcher_canceller;
 pub mod import_export {
     use {
         crate::{
-            action::Action, congestion_handler::*, handle_packet::*, packet::*, peer::peer::*,
-            store::*,
+            action::Action, congestion_handler::*, handle_packet::*, packet::*, peer::*, store::*,
         },
         futures::{future::join_all, stream::FuturesUnordered, Future},
+        log::{debug, error, info, warn},
         prelude::*,
         std::{
             default,
@@ -51,7 +51,7 @@ pub mod import_export {
                 Action::SendHello(None, my_data.get_name().unwrap(), server_sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            println!("attempt : {}", attempt);
+            debug!("attempt : {}", attempt);
 
             match peek_until_hello_reply_from(
                 Arc::clone(&peek_process_queue),
@@ -75,7 +75,6 @@ pub mod import_export {
                 Err(_) => continue,
             }
         }
-        println!("here")
     }
 
     pub fn keep_alive_to_peer(
@@ -163,20 +162,32 @@ pub mod import_export {
         select! {
             timed_out = timeout_handle => {
                 match timed_out {
-                    Ok(result)=> match result {
-                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
-                        _=>panic!("Shouldn't happen"),
+                    Ok(result) => match result {
+                        Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
+                        _ => {
+                            error!("Should not happen");
+                            panic!("Shouldn't happen")
+                        },
                     },
-                    Err(_)=> panic!("time out task panicked"),
+                    Err(e) => {
+                        error!("{e}");
+                        panic!("time out task panicked")
+                    },
                 }
             }
             action = task_handle => {
                 match action {
-                    Ok(result)=> match result {
-                        Ok(action)=> return Ok(action),
-                        _=>panic!("Shouldn't happen"),
+                    Ok(result) => match result {
+                        Ok(action) => return Ok(action),
+                        _ => {
+                            error!("Should not happen");
+                            panic!("Shouldn't happen")
+                        },
                     },
-                    Err(_)=> panic!("time out task panicked"),
+                    Err(e) => {
+                        error!("{e}");
+                        panic!("Timeout task panicked")
+                    },
                 }
             }
         };
@@ -201,6 +212,7 @@ pub mod import_export {
         let mut subtasks = vec![];
         let children: Option<Vec<[u8; 32]>>;
 
+        // Send a get datum with the first target hash
         Queue::lock_and_push(
             Arc::clone(&action_queue),
             Action::SendGetDatumWithHash(*&hash, *&sock_addr),
@@ -218,13 +230,24 @@ pub mod import_export {
         .await
         {
             Ok(datum_action) => {
+                // build the maps :
+                // - child -> parent
+                // - parent -> child
+                // - hash -> name
+                // and return the children if there are some
+                // - chunk -> no children
+                // - tree -> no children (fetching only the filesystem)
+                // - directory -> children
                 children = match build_tree_maps(&datum_action, Arc::clone(&maps)) {
                     Ok(childs) => match childs {
                         Some(childs) => Some(childs),
                         None => None,
                     },
                     Err(PeerError::InvalidPacket) => return Err(PeerError::InvalidPacket),
-                    _ => panic!("Shouldn't happen"),
+                    _ => {
+                        error!("Should not happen");
+                        panic!("Shouldn't happen")
+                    }
                 };
             }
             Err(PeerError::ResponseTimeout) => {
@@ -237,7 +260,7 @@ pub mod import_export {
             Some(childs) => {
                 // let mut hash_vec = vec![];
                 for child_hash in childs {
-                    println!("Asking for child {:?}", &child_hash);
+                    debug!("Asking for child {:?}", &child_hash);
                     subtasks.push(fetch_subtree_from(
                         Arc::clone(&peek_process_queue),
                         Arc::clone(&process_queue_readers_state),
@@ -253,7 +276,7 @@ pub mod import_export {
                 // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
             }
             None => {
-                println!("no childs");
+                debug!("no childs");
                 return Ok(());
             }
         };
@@ -351,21 +374,32 @@ pub mod import_export {
         select! {
             timed_out = timeout_handle => {
                 match timed_out {
-                    Ok(result)=> match result {
-                        Err(PeerError::ResponseTimeout)=> return Err(PeerError::ResponseTimeout),
-                        _=>panic!("Shouldn't happen"),
+                    Ok(result) => match result {
+                        Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
+                        _ => {
+                            error!("Should not happen");
+                            panic!("Shouldn't happen")
+                        },
                     },
-                    Err(_)=> panic!("time out task panicked"),
+                    Err(e) => {
+                        error!("{e}");
+                        panic!("Timeout task panicked")
+                    },
                 }
             }
             action = task_handle => {
                 match action {
-                    Ok(result)=> match result {
-                        Ok(action)=> return Ok(action),
-                        _=>panic!("Shouldn't happen"),
+                    Ok(result) => match result {
+                        Ok(action) => return Ok(action),
+                        _ => {
+                            error!("Should not happen");
+                            panic!("Shouldn't happen")
+                        },
                     },
-                    Err(_)=> panic!("time out task panicked"),
-                }
+                    Err(e) => {
+                        error!("{e}");
+                        panic!("Timeout task panicked")
+                    },                }
             }
         };
     }
@@ -377,7 +411,7 @@ mod tests {
         super::*,
         crate::{
             congestion_handler::*, handle_action::handle_action_task,
-            handle_packet::handle_packet_task, packet::*, peer::peer::*, process::process_task,
+            handle_packet::handle_packet_task, packet::*, peer::*, process::process_task,
             sender_receiver::*, store::*, task_launcher_canceller::task_launcher,
         },
         futures::join,
@@ -544,7 +578,7 @@ mod tests {
         task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
 
         /*jch */
-        // let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
         // let sock_addr: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
@@ -553,7 +587,7 @@ mod tests {
         /*derriere un nat */
         // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
-        let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
+        // let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
         {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
@@ -598,15 +632,16 @@ mod tests {
         )
         .await;
 
-        let child_hash: [u8; 32] = [
-            115, 50, 75, 0, 182, 12, 186, 29, 161, 254, 249, 93, 93, 212, 161, 125, 206, 44, 148,
-            135, 173, 127, 64, 161, 49, 67, 77, 10, 174, 213, 70, 250,
-        ];
+        // let child_hash: [u8; 32] = [
+        //     115, 50, 75, 0, 182, 12, 186, 29, 161, 254, 249, 93, 93, 212, 161, 125, 206, 44, 148,
+        //     135, 173, 127, 64, 161, 49, 67, 77, 10, 174, 213, 70, 250,
+        // ];
 
         match maps.lock() {
             Ok(m) => {
-                println!("Name = {}", get_full_name(&child_hash, &m.2, &m.0));
-                println!("{:?}", get_name_to_hash_hashmap(&m.0, &m.2));
+                // println!("Name = {}", get_full_name(&child_hash, &m.2, &m.0));
+                println!("{:?}", get_name_to_hash_hashmap(&m.0, &m.2).keys());
+                // println!("Final hash to name {:?}", &m.2);
             }
             _ => (),
         };
@@ -738,7 +773,7 @@ mod tests {
             action_queue_state.clone(),
             server_sock_addr,
             /*en nanosecs */
-            1000000000,
+            1_000_000_000,
         );
         sleep(Duration::from_secs(2)).await;
 
@@ -747,16 +782,16 @@ mod tests {
             action_queue_state.clone(),
             sock_addr_vec,
             /*en nanosecs */
-            1000000,
+            1_000_000,
         );
         keep_alive_to_peer(
             action_queue,
             action_queue_state,
             sock_addr,
             /*en nanosecs */
-            9000000000,
+            9_000_000_000,
         );
-        sleep(Duration::from_secs(1000)).await;
+        sleep(Duration::from_secs(1_000)).await;
         println!("main ends");
     }
 }

@@ -4,7 +4,7 @@ use crate::{
     action::Action,
     congestion_handler::{self, PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
-    peer::peer::ActivePeers,
+    peer::ActivePeers,
 };
 use std::{
     net::SocketAddr,
@@ -23,8 +23,9 @@ pub fn resend_task(
 ) {
     tokio::spawn(async move {
         /*Shouldn't wait/resend after replies!!  */
-        let server_socket_addr4 : SocketAddr = "81.194.27.155:8443".parse().unwrap();
-        let server_socket_addr6 : SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
+        let server_socket_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        let server_socket_addr6: SocketAddr =
+            "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         loop {
             sleep(Duration::from_secs(3));
             // pending_ids_state.wait();
@@ -35,12 +36,10 @@ pub fn resend_task(
 
             let mut nat_trav_packets = vec![];
             for addr in addr_to_send_nat_trav {
-                nat_trav_packets.push(
-                    (
-                        PacketBuilder::nat_traversal_request_from_addr_packet(addr),
-                        server_socket_addr4
-                    )   
-                );
+                nat_trav_packets.push((
+                    PacketBuilder::nat_traversal_request_from_addr_packet(addr),
+                    server_socket_addr4,
+                ));
             }
             Queue::lock_and_push_mul(sending_queue.clone(), nat_trav_packets);
         }

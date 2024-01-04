@@ -1,10 +1,18 @@
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hex;
-use lib_network::packet::{self, PacketBuilder};
+use lib_network::{
+    action::*, congestion_handler::*, import_export::*, packet::*, peer::*, store::*,
+    task_launcher_canceller::*,
+};
 use lib_web::discovery;
 use log::{debug, error, info, warn};
-use tokio;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::{self, net::UdpSocket, time::sleep};
 
 #[derive(Parser)]
 #[command(name = "UDP2P-cli")]
@@ -50,9 +58,18 @@ enum Commands {
         #[arg(short, long)]
         datum: String,
     },
+    /// Download the file system structure from a hash
+    FetchFileTree {
+        /// Address of the peer
+        #[arg(short, long)]
+        peer: String,
+        /// Datum hash
+        #[arg(short, long)]
+        datum: String,
+    },
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 100)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -62,7 +79,7 @@ async fn main() -> Result<()> {
             log::info!("Fetching peers from central server {}.", host);
             let client = discovery::get_client(5)?;
             let url = discovery::parse_url(host)?;
-            let peers = discovery::get_peers_names(client, &url).await?;
+            let peers = discovery::get_peers_names(&client, &url).await?;
             println!("Peers :");
             for (i, peer) in peers.iter().enumerate() {
                 println!("\t[{i}] = {peer}");
@@ -76,8 +93,16 @@ async fn main() -> Result<()> {
             );
             let client = discovery::get_client(5)?;
             let url = discovery::parse_url(host)?;
-            let peers = discovery::get_peer_addresses(client, &url, &peer).await?;
-            println!("{peers:?}");
+            let addr = discovery::get_peer_addresses(&client, &url, &peer).await?;
+            let root = discovery::get_peer_root(&client, &url, peer).await?;
+            let key = discovery::get_peer_key(&client, &url, peer).await?;
+            println!("Informations for peer {peer}");
+            println!("Addresses :");
+            for a in addr.addresses.into_iter() {
+                println!("\t- {a}");
+            }
+            println!("Root :\n\t- {}", hex::encode(root));
+            println!("Key :\n\t- {}", hex::encode(key));
         }
         Commands::GetDatum { peer, datum } => {
             log::info!("Fetching datum from peer {} with hash {}.", peer, datum);
@@ -87,15 +112,98 @@ async fn main() -> Result<()> {
             };
             let packet = PacketBuilder::new()
                 .gen_id()
-                .packet_type(packet::PacketType::GetDatum)
+                .packet_type(PacketType::GetDatum)
                 .body(datum_bytes)
                 .build()
                 .unwrap_or_default();
             println!("{packet:#?}");
             println!("{:#?}", packet.as_bytes());
         }
+        Commands::FetchFileTree { peer, datum } => {
+            log::info!("Fetching file tree from peer {} for hash {}.", peer, datum);
+            let datum_bytes = match hex::decode(datum) {
+                Ok(h) => h,
+                Err(e) => bail!("Failed to decode root hash. Please check your input."),
+            };
+            let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+            let maps = build_tree_mutex();
+            let queues = build_queues();
+            let active_peers = ActivePeers::build_mutex();
+
+            let receive_queue_state = Arc::clone(&queues.5);
+            let action_queue = Arc::clone(&queues.2);
+            let action_queue_state = Arc::clone(&queues.6);
+            let process_queue = Arc::clone(&queues.3);
+            let process_queue_state = Arc::clone(&queues.8);
+            let process_queue_readers_state = Arc::clone(&queues.9);
+
+            let mut my_data = Peer::new();
+            my_data.set_name(vec![97, 110, 105, 116]);
+            let my_data = Arc::new(my_data);
+
+            task_launcher(queues, active_peers.clone(), my_data.clone(), sock.clone());
+
+            /*jch */
+            let sock_addr: SocketAddr = peer.parse().unwrap();
+            {
+                Queue::lock_and_push(
+                    Arc::clone(&action_queue),
+                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                );
+                Queue::lock_and_push(
+                    Arc::clone(&action_queue),
+                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                );
+                Queue::lock_and_push(
+                    Arc::clone(&action_queue),
+                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                );
+            }
+            sleep(Duration::from_secs(1)).await;
+            let peer_hash = {
+                Queue::lock_and_push(Arc::clone(&action_queue), Action::SendRoot(None, sock_addr));
+                QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                receive_queue_state.wait();
+                let guard = active_peers.lock().unwrap();
+                let peer = guard.addr_map.get(&sock_addr).unwrap();
+                peer.get_root_hash().unwrap()
+            };
+
+            // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);
+            fetch_subtree_from(
+                Arc::clone(&process_queue),
+                Arc::clone(&process_queue_readers_state),
+                Arc::clone(&action_queue),
+                Arc::clone(&action_queue_state),
+                Arc::clone(&maps),
+                // yoan_hash,
+                peer_hash,
+                sock_addr,
+            )
+            .await;
+
+            match maps.lock() {
+                Ok(m) => {
+                    println!("File tree :");
+                    let n_to_h_hashmap = get_name_to_hash_hashmap(&m.0, &m.2);
+                    let mut names: Vec<&String> = n_to_h_hashmap.keys().collect();
+                    names.sort();
+                    for n in names.into_iter() {
+                        let mut step = n.chars().filter(|ch| *ch == '/').count();
+                        if step > 0 {
+                            step -= 1;
+                        }
+                        let mut carry = str::repeat("   ", step);
+                        carry.push_str("└──");
+                        println!("{carry} {n}");
+                        println!("   {carry} {}", hex::encode(n_to_h_hashmap.get(n).unwrap()));
+                    }
+                }
+                Err(e) => error!("Got error {e}"),
+            };
+        }
         _ => {
-            println!("No subcommand");
+            error!("No subcommand");
         }
     }
     return Ok(());

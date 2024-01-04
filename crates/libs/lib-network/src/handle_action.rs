@@ -8,6 +8,7 @@ use crate::action::Action;
 use crate::handle_packet::HandlingError;
 use crate::packet;
 use crate::packet::{Packet, PacketBuilder};
+use log::{debug, error, info, warn};
 
 use crate::congestion_handler::*;
 use crate::process;
@@ -147,7 +148,7 @@ pub fn handle_action(
         }
         _ => {
             /*TO DO*/
-            println!("Shouldn't happen if not planned.");
+            error!("Shouldn't happen if not planned.");
             Queue::write_lock_and_push(Arc::clone(&process_queue), action);
             QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
         }

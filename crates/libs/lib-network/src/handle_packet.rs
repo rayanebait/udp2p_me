@@ -4,6 +4,7 @@ use std::str::Bytes;
 use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock};
 
 use futures::future::pending;
+use log::{debug, error, info, warn};
 use tokio_util::bytes::Buf;
 
 use crate::action::*;
@@ -57,7 +58,10 @@ pub fn handle_packet_task(
                     continue;
                 }
                 Err(HandlingError::InvalidPacketError) => return,
-                _ => panic!("Shouldn't happen"),
+                _ => {
+                    error!("Should not happen");
+                    panic!("Shouldn't happen")
+                }
             };
         }
     });
@@ -84,7 +88,10 @@ pub fn handle_packet(
         Err(CongestionHandlerError::AddrAndIdDontMatchError) => {
             Err(HandlingError::InvalidPacketError)
         }
-        Err(_) => panic!("Shouldn't happen, handle packet "),
+        Err(e) => {
+            error!("{e}");
+            panic!("Shouldn't happen, handle packet ")
+        }
     }
 }
 
@@ -97,16 +104,12 @@ fn handle_request_packet(
     let id = packet.get_id();
     let body = packet.get_body();
     match packet.get_packet_type() {
-        PacketType::NoOp => {
-            Ok(Action::ProcessNoOp(socket_addr))
-        }
-        PacketType::Error => {
-            Ok(Action::ProcessError(
-                *id,
-                packet.get_body().to_owned(),
-                socket_addr,
-            ))
-        }
+        PacketType::NoOp => Ok(Action::ProcessNoOp(socket_addr)),
+        PacketType::Error => Ok(Action::ProcessError(
+            *id,
+            packet.get_body().to_owned(),
+            socket_addr,
+        )),
         PacketType::Hello => {
             /*change to process hello reply */
             {
@@ -234,7 +237,7 @@ fn handle_response_packet(
         },
         PacketType::NatTraversal => {
             if socket_addr == "81.194.27.155:8443".parse().unwrap() {
-                println!("Received NatTraversal from server\n");
+                debug!("Received NatTraversal from server\n");
                 return Ok(Action::ProcessNatTraversal(
                     packet.get_body().to_owned(),
                     socket_addr,

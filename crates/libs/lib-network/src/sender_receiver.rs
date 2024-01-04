@@ -1,3 +1,4 @@
+use log::{debug, error, info, warn};
 use std::net::SocketAddr;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::sleep;
@@ -26,7 +27,7 @@ pub fn receiver(
                 _ => continue,
             };
 
-            println!(
+            debug!(
                 "Received {} packet from {}\n",
                 packet.get_packet_type(),
                 sock_addr
@@ -52,7 +53,10 @@ pub fn sender(
             let packet_for_addr = {
                 let mut guard = match send_queue.lock() {
                     Ok(guard) => guard,
-                    Err(poison_error) => panic!("Poisoned Mutex found in sender"),
+                    Err(poison_error) => {
+                        error!("{poison_error}");
+                        panic!("Poisoned Mutex found in sender")
+                    }
                 };
 
                 /*pops the front packet if it exists */
@@ -71,7 +75,7 @@ pub fn sender(
                     continue;
                 }
             };
-            println!(
+            debug!(
                 "Sending {} packet to {}\n",
                 packet.get_packet_type(),
                 sock_addr

@@ -36,7 +36,7 @@ pub mod discovery {
 
     /// Attempt to get data from a host and return it as a String.
     // TODO : setup logging for request errors
-    pub async fn get_string_data(client: Client, url: &Url) -> Result<String> {
+    pub async fn get_string_data(client: &Client, url: &Url) -> Result<String> {
         let request = client.get(url.clone());
         let response = request
             .send()
@@ -66,7 +66,7 @@ pub mod discovery {
 
     /// Attempt to get data from a host and return it as bytes.
     // TODO : setup logging for request errors
-    pub async fn get_bytes_data(client: Client, url: &Url) -> Result<Bytes> {
+    pub async fn get_bytes_data(client: &Client, url: &Url) -> Result<Bytes> {
         let request = client.get(url.clone());
         let response = request
             .send()
@@ -94,34 +94,34 @@ pub mod discovery {
         }
     }
 
-    pub async fn get_peer_addresses(client: Client, base_url: &Url, peer: &str) -> Result<Peer> {
+    pub async fn get_peer_addresses(client: &Client, base_url: &Url, peer: &str) -> Result<Peer> {
         // Peer adresses must be located at /peers/<p>/addresses from the base_url
         let url = base_url.join(format!("peers/{peer}/addresses").as_str())?;
-        let data = get_string_data(client, &url).await?;
+        let data = get_string_data(&client, &url).await?;
         return Ok(Peer {
             name: peer.to_string(),
             addresses: parse_newline_separated(&data),
         });
     }
 
-    pub async fn get_peers_names(client: Client, base_url: &Url) -> Result<Vec<String>> {
+    pub async fn get_peers_names(client: &Client, base_url: &Url) -> Result<Vec<String>> {
         // Peers names must be located at /peers from the base_url
         let url = base_url.join("peers")?;
-        let data = get_string_data(client, &url).await?;
+        let data = get_string_data(&client, &url).await?;
         let peers = parse_newline_separated(&data);
 
         return Ok(peers);
     }
 
-    pub async fn get_peer_key(client: Client, base_url: &Url, peer: &str) -> Result<Bytes> {
+    pub async fn get_peer_key(client: &Client, base_url: &Url, peer: &str) -> Result<Bytes> {
         let url = base_url.join(format!("peers/{peer}/key").as_str())?;
-        let data = get_bytes_data(client, &url).await?;
+        let data = get_bytes_data(&client, &url).await?;
         return Ok(data);
     }
 
-    pub async fn get_peer_root(client: Client, base_url: &Url, peer: &str) -> Result<Bytes> {
+    pub async fn get_peer_root(client: &Client, base_url: &Url, peer: &str) -> Result<Bytes> {
         let url = base_url.join(format!("peers/{peer}/root").as_str())?;
-        let data = get_bytes_data(client, &url).await?;
+        let data = get_bytes_data(&client, &url).await?;
         return Ok(data);
     }
 
@@ -157,7 +157,7 @@ pub mod discovery {
                 .user_agent("Projet M2 protocoles Internet")
                 .build()
                 .unwrap();
-            let result = get_peers_names(client, &host).await.unwrap();
+            let result = get_peers_names(&client, &host).await.unwrap();
             println!("Peers = {:?}", result);
         }
 
@@ -170,7 +170,7 @@ pub mod discovery {
                 .user_agent("Projet M2 protocoles Internet")
                 .build()
                 .unwrap();
-            let result = get_peer_addresses(client, &host, "jch.irif.fr")
+            let result = get_peer_addresses(&client, &host, "jch.irif.fr")
                 .await
                 .unwrap();
             println!("Peer address = {:?}", result);
@@ -185,7 +185,7 @@ pub mod discovery {
                 .user_agent("Projet M2 protocoles Internet")
                 .build()
                 .unwrap();
-            let result = get_peer_key(client, &host, "jch.irif.fr").await;
+            let result = get_peer_key(&client, &host, "jch.irif.fr").await;
             match result {
                 Ok(key) => {
                     if key.len() == 0 {
@@ -207,7 +207,7 @@ pub mod discovery {
                 .user_agent("Projet M2 protocoles Internet")
                 .build()
                 .unwrap();
-            let result = get_peer_root(client, &host, "jch.irif.fr").await;
+            let result = get_peer_root(&client, &host, "jch.irif.fr").await;
             match result {
                 Ok(hash) => {
                     if hash.len() == 0 {

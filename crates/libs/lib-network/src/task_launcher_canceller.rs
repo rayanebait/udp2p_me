@@ -9,7 +9,7 @@ use {
         handle_action::handle_action_task,
         handle_packet::handle_packet_task,
         packet::Packet,
-        peer::peer::{ActivePeers, Peer},
+        peer::{ActivePeers, Peer},
         process::process_task,
         sender_receiver::{receiver, sender},
     },

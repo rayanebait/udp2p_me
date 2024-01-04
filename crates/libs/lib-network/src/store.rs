@@ -1,8 +1,9 @@
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
 use lib_web::discovery::Peer;
 
-use crate::{action::Action, peer::peer::PeerError};
+use crate::{action::Action, peer::PeerError};
 use std::sync::{Arc, Mutex, PoisonError};
 
 pub fn build_tree_mutex() -> Arc<
@@ -30,7 +31,10 @@ pub fn build_tree_maps(
 ) -> Result<Option<Vec<[u8; 32]>>, PeerError> {
     let mut guard = match maps.lock() {
         Ok(maps) => maps,
-        Err(poison_error) => panic!("Some thread panicked"),
+        Err(poison_error) => {
+            error!("{poison_error}");
+            panic!("Some thread panicked")
+        }
     };
     // let (
     //     mut child_to_parent_map,
@@ -45,7 +49,7 @@ pub fn build_tree_maps(
     let child_to_parent_map = (guard.0).clone();
     get_hash_to_name_hashmap(action, &mut guard.2, &child_to_parent_map)?;
 
-    let hash_to_name_map = (guard.2).clone();
+    // let hash_to_name_map = (guard.2).clone();
     // get_name_to_hash_hashmap(
     //     action,
     //     &mut guard.3,
@@ -101,13 +105,13 @@ pub fn get_child_to_parent_hashmap(
                     }
                 }
                 _ => {
-                    println!("Not a mkfs node");
+                    warn!("Not a mkfs node");
                     return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
-            println!("Not the datum we are looking for");
+            warn!("Not the datum we are looking for");
             return (Err(PeerError::InvalidPacket));
         }
     }
@@ -157,13 +161,13 @@ pub fn get_parent_to_child_hashmap(
                     Ok(Some(children))
                 }
                 _ => {
-                    println!("Not a mkfs node");
+                    warn!("Not a mkfs node");
                     return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
-            println!("Not the datum we are looking for");
+            warn!("Not the datum we are looking for");
             return (Err(PeerError::InvalidPacket));
         }
     }
@@ -186,6 +190,17 @@ pub fn get_hash_to_name_hashmap(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             hash.copy_from_slice(temp);
+
+            // let parent_name = match c_to_p_hashmap.get(&hash) {
+            //     Some(p) => match h_to_n_hashmap.get(p) {
+            //         Some(n) => n.to_string(),
+            //         None => "".to_string(),
+            //     },
+            //     None => "".to_string(),
+            // };
+
+            // println!("Parent name {} for data type {:?}", parent_name, data_type);
+
             match data_type {
                 0 => {}
                 1 => {}
@@ -209,20 +224,30 @@ pub fn get_hash_to_name_hashmap(
                         };
                         let mut leaf_slice = [0u8; 32];
                         leaf_slice.copy_from_slice(&leaf);
+
+                        // let mut temp_parent_name = parent_name.clone();
+                        // println!("Parent name {}", parent_name);
+                        // if temp_parent_name.chars().last() != Some('/') && name != "" {
+                        //     temp_parent_name.push('/');
+                        // }
+                        // temp_parent_name.push_str(&name);
+                        // println!("Full name {}", temp_parent_name);
+                        // h_to_n_hashmap.insert(leaf_slice, temp_parent_name);
                         h_to_n_hashmap.insert(leaf_slice, name);
                     }
                 }
                 _ => {
-                    println!("Not a mkfs node");
+                    warn!("Not a mkfs node");
                     return (Err(PeerError::InvalidPacket));
                 }
             }
         }
         _ => {
-            println!("Not the datum we are looking for");
+            warn!("Not the datum we are looking for");
             return (Err(PeerError::InvalidPacket));
         }
     }
+    // println!("Hash to name hashmap {:?}", &h_to_n_hashmap);
     return Ok(());
 }
 

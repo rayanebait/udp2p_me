@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 
 use futures::Future;
+use log::{debug, error, info, warn};
 use std::time::{Duration, Instant};
 use tokio::time::{sleep, Sleep};
 
@@ -66,7 +67,10 @@ impl QueueState {
         let (state_lock, _) = &queue_state.is_not_empty;
         let mut state_guard = match state_lock.lock() {
             Ok(state_guard) => state_guard,
-            Err(poison_error) => panic!("QueueState poisoned, sender panicked ?"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("QueueState poisoned, sender panicked ?")
+            }
         };
 
         *state_guard = false;
@@ -80,7 +84,10 @@ impl QueueState {
         let (state_lock, notifyer) = &queue_state.is_not_empty;
         let mut state_guard = match state_lock.lock() {
             Ok(state_guard) => state_guard,
-            Err(poison_error) => panic!("QueueState poisoned, sender panicked ?"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("QueueState poisoned, sender panicked ?")
+            }
         };
 
         *state_guard = true;
@@ -110,7 +117,10 @@ impl<T: Clone> Queue<T> {
     pub fn read_lock_and_peek(queue: Arc<RwLock<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.read() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
         queue_guard.peek_front()
     }
@@ -118,7 +128,10 @@ impl<T: Clone> Queue<T> {
     pub fn write_lock_and_get(queue: Arc<RwLock<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.write() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         queue_guard.can_pop = true;
@@ -128,7 +141,10 @@ impl<T: Clone> Queue<T> {
     pub fn write_lock_and_push(queue: Arc<RwLock<Queue<T>>>, data: T) {
         let mut queue_guard = match queue.write() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         /*Only the pusher can pop the data,
@@ -143,7 +159,10 @@ impl<T: Clone> Queue<T> {
     pub fn lock_and_push(queue: Arc<Mutex<Queue<T>>>, data: T) {
         let mut queue_guard = match queue.lock() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         queue_guard.push_back(data);
@@ -151,7 +170,10 @@ impl<T: Clone> Queue<T> {
     pub fn lock_and_push_mul(queue: Arc<Mutex<Queue<T>>>, data_vec: Vec<T>) {
         let mut queue_guard = match queue.lock() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         queue_guard.append_back(data_vec);
@@ -161,7 +183,10 @@ impl<T: Clone> Queue<T> {
     pub fn write_lock_and_pop_if_can(queue: Arc<RwLock<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.write() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         if queue_guard.can_pop {
@@ -173,7 +198,10 @@ impl<T: Clone> Queue<T> {
     pub fn lock_and_pop(queue: Arc<Mutex<Queue<T>>>) -> Option<T> {
         let mut queue_guard = match queue.lock() {
             Ok(queue_gard) => queue_gard,
-            Err(poison_error) => panic!("Mutex is poisoned, some thread panicked"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Mutex is poisoned, some thread panicked")
+            }
         };
 
         queue_guard.pop_front()
@@ -316,7 +344,10 @@ impl PendingIds {
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,
             /*If Mutex is poisoned stop every thread, something is wrong */
-            Err(poison_error) => panic!("Poisoned Ids Mutex"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Poisoned IDs mutex")
+            }
         };
 
         /*
@@ -326,7 +357,7 @@ impl PendingIds {
         */
         match pending_ids_guard.search_id_mut(&packet) {
             /*id exists */
-            Ok((sock_addr,packet_type, _, attempts)) => {
+            Ok((sock_addr, packet_type, _, attempts)) => {
                 if *sock_addr != *peer_addr {
                     return;
                 } else {
@@ -344,7 +375,10 @@ impl PendingIds {
                     .insert(*packet.get_id(), (packet.clone(), *peer_addr));
                 return;
             }
-            _ => panic!("Shouldn't happen, handle packet"),
+            Err(e) => {
+                error!("{e}");
+                panic!("Should not happen, handle packet")
+            }
         };
     }
 
@@ -361,7 +395,10 @@ impl PendingIds {
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,
             /*If Mutex is poisoned stop every thread, something is wrong */
-            Err(poison_error) => panic!("Poisoned Ids Mutex"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Poisoned IDs mutex")
+            }
         };
 
         /*Check if id exists */
@@ -388,7 +425,10 @@ impl PendingIds {
             Err(CongestionHandlerError::NoPacketWithIdError) => {
                 Err(CongestionHandlerError::NoPacketWithIdError)
             }
-            _ => panic!("Shouldn't happen, handle packet"),
+            Err(e) => {
+                error!("{e}");
+                panic!("Should not happen, handle packet")
+            }
         }
         /*Mutex is dropped here */
     }
@@ -398,11 +438,13 @@ impl PendingIds {
     pub fn packets_to_resend(
         pending_ids: Arc<Mutex<PendingIds>>,
     ) -> (Vec<SocketAddr>, Vec<(Packet, SocketAddr)>) {
-        println!("HERE");
         let mut pending_ids_guard = match pending_ids.lock() {
             Ok(guard) => guard,
             /*If Mutex is poisoned stop every thread, something is wrong */
-            Err(poison_error) => panic!("Poisoned Ids Mutex"),
+            Err(poison_error) => {
+                error!("{poison_error}");
+                panic!("Poisoned IDs mutex")
+            }
         };
 
         let mut id_to_resend = vec![];
@@ -414,14 +456,14 @@ impl PendingIds {
                 id_to_pop.push(*id);
                 id_to_send_nat_trav.push(*id);
             } else if rto.elapsed() > Duration::from_secs(1) {
-                if *packet_type != PacketType::NatTraversalRequest{
+                if *packet_type != PacketType::NatTraversalRequest {
                     id_to_resend.push(*id);
                 }
             }
         }
 
         let mut addr_to_send_nat_trav = vec![];
-        println!("to pop {:?},\n to resend {:?}", id_to_pop, id_to_resend);
+        debug!("to pop {:?},\n to resend {:?}", id_to_pop, id_to_resend);
         for id in id_to_pop {
             pending_ids_guard.id_to_packet.remove(&id);
             let (addr, ..) = pending_ids_guard.id_to_addr.remove(&id).unwrap();
