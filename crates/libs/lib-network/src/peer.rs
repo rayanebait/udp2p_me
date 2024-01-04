@@ -1,10 +1,18 @@
 use log::{debug, error, info, warn};
-use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        Mutex
+    },
+    time::{
+        Duration,
+        Instant
+    }
+};
 use thiserror::Error;
-use tokio::time::{sleep, Duration, Instant, Sleep};
 
-use std::sync::{Arc, Mutex};
 
 #[derive(Error, Debug)]
 pub enum PeerError {
@@ -26,6 +34,8 @@ pub enum PeerError {
     InvalidPacket,
     #[error("UnkownExtension")]
     UnknownExtension,
+    #[error("Peer timed out")]
+    PeerTimedOut,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -35,7 +45,7 @@ pub struct Peer {
     root: Option<[u8; 32]>,
     public_key: Option<[u8; 64]>,
     extensions: Option<[u8; 4]>,
-    timer: Option<Arc<Sleep>>,
+    timer: Option<Instant>,
 }
 
 impl Peer {
@@ -43,13 +53,13 @@ impl Peer {
         Self { ..Peer::default() }
     }
 
-    pub fn set_hash(&mut self, root: &[u8; 32]) -> &mut Self {
-        self.root = Some(root.clone());
+    pub fn set_hash(&mut self, root: Option<[u8; 32]>) -> &mut Self {
+        self.root = root;
         self
     }
 
-    pub fn set_public_key(&mut self, public_key: &[u8; 64]) -> &mut Self {
-        self.public_key = Some(public_key.clone());
+    pub fn set_public_key(&mut self, public_key: Option<[u8; 64]>) -> &mut Self {
+        self.public_key = public_key;
         self
     }
     pub fn set_name(&mut self, name: Vec<u8>) -> &mut Self {
@@ -66,7 +76,7 @@ impl Peer {
         self
     }
     pub fn set_timer(&mut self) -> &mut Self {
-        self.timer = Some(Arc::new(sleep(Duration::from_secs(160))));
+        self.timer = Some(Instant::now());
         self
     }
 
@@ -96,6 +106,20 @@ impl Peer {
     }
     pub fn get_extensions(&self) -> Option<[u8; 4]> {
         *&self.extensions
+    }
+    pub fn has_timed_out(&self, time_out: u64)->Result<(), PeerError>{
+        match self.timer {
+            Some(timer)=> {
+                let elapsed_dur = Instant::now() - timer;
+
+                if elapsed_dur > Duration::from_millis(time_out){
+                    return Err(PeerError::PeerTimedOut)
+                } else {
+                    return Ok(())
+                }
+            },
+            None => return Err(PeerError::UnknownPeer),
+        }
     }
 }
 
@@ -226,20 +250,23 @@ impl ActivePeers {
         };
 
         /*keep alive */
-        match peer.timer.as_ref().unwrap().is_elapsed() {
-            true => {
+        match peer.has_timed_out(3000) {
+            /*Hasn't timed out */
+            Ok(())=>{
+                peer.set_hash(root);
+                return Ok(())
+            },
+            /*Has timedout */
+            Err(PeerError::PeerTimedOut) => {
                 let peer_clone = peer.clone();
                 /*useless line but it is why can't pop with peer */
                 // drop(peer);
                 active_peers.pop(&peer_clone);
-                return Err(PeerError::ResponseTimeout);
+                return Err(PeerError::PeerTimedOut);
             }
-            false => {
-                /*keep alive and set peer root*/
-                peer.set_timer();
-                peer.root = root;
-                Ok(())
-            }
+            Err(PeerError::UnknownPeer) => Err(PeerError::UnknownPeer),
+            _=> panic!("Shouldn't happen"),
+            
         }
     }
     pub fn set_peer_public_key(
@@ -260,22 +287,25 @@ impl ActivePeers {
             _ => return Err(PeerError::UnknownPeer),
         };
 
-        match peer.timer.as_ref().unwrap().is_elapsed() {
-            true => {
-                /*drop the peer. */
+        match peer.has_timed_out(3000) {
+            /*Hasn't timed out */
+            Ok(())=>{
+                peer.set_public_key(public_key);
+                return Ok(())
+            },
+            /*Has timedout */
+            Err(PeerError::PeerTimedOut) => {
                 let peer_clone = peer.clone();
-                /*useless line but it is why can't pop with peer directly*/
+                /*useless line but it is why can't pop with peer */
                 // drop(peer);
                 active_peers.pop(&peer_clone);
-                return Err(PeerError::ResponseTimeout);
+                return Err(PeerError::PeerTimedOut);
             }
-            false => {
-                /*keep alive and set public key*/
-                peer.set_timer();
-                peer.public_key = public_key;
-                Ok(())
-            }
+            Err(PeerError::UnknownPeer) => Err(PeerError::UnknownPeer),
+            _=> panic!("Shouldn't happen"),
+            
         }
+
     }
     /*Checks the internal timer attached to peer to see if it is elapsed */
     /*The keep alive is done internally in every other methods  */
@@ -296,17 +326,19 @@ impl ActivePeers {
             _ => return Err(PeerError::UnknownPeer),
         };
 
-        match &peer.timer {
-            Some(timer) => {
-                if timer.is_elapsed() {
-                    active_peers.addr_map.remove(&sock_addr);
-                    return Err(PeerError::ResponseTimeout);
-                }
+        match peer.has_timed_out(3000) {
+            /*Hasn't timed out */
+            Ok(()) => {
+                peer.set_timer();
+                return Ok(())
             }
-            None => return Err(PeerError::Unknown),
+            Err(PeerError::PeerTimedOut) => {
+                active_peers.addr_map.remove(&sock_addr);
+                return Err(PeerError::PeerTimedOut)
+            }
+            Err(PeerError::UnknownPeer) =>
+                return Err(PeerError::Unknown),
+            _=>panic!("Shouldn't happen"),
         }
-
-        peer.set_timer();
-        Ok(())
     }
 }
