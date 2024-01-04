@@ -43,6 +43,10 @@ pub fn resend_task(
                     PacketBuilder::nat_traversal_request_from_addr_packet(addr),
                     server_socket_addr4,
                 ));
+                nat_trav_packets.push((
+                    PacketBuilder::nat_traversal_request_from_addr_packet(addr),
+                    server_socket_addr6,
+                ));
             }
             Queue::lock_and_push_mul(sending_queue.clone(), nat_trav_packets);
         }

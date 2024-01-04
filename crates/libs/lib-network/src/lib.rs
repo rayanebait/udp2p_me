@@ -667,6 +667,7 @@ mod tests {
             process_queue_state.wait();
             sleep(Duration::from_millis(100)).await;
             let guard = active_peers.lock().unwrap();
+            /*If panics here, means the packet received had invalid hash (body length<32) */
             let peer = guard.addr_map.get(&sock_addr).unwrap();
             peer.get_root_hash()
         }{
