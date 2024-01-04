@@ -6,6 +6,12 @@ use lib_web::discovery::Peer;
 use crate::{action::Action, peer::PeerError};
 use std::sync::{Arc, Mutex, PoisonError};
 
+pub struct SimpleNode {
+    hash: [u8; 32],
+    children: Option<Vec<SimpleNode>>,
+    data: Option<Vec<u8>>,
+}
+
 pub fn build_tree_mutex() -> Arc<
     Mutex<(
         HashMap<[u8; 32], [u8; 32]>,
@@ -19,6 +25,7 @@ pub fn build_tree_mutex() -> Arc<
         HashMap::<[u8; 32], String>::new(),
     )))
 }
+
 pub fn build_tree_maps(
     action: &Action,
     maps: Arc<
@@ -104,6 +111,73 @@ pub fn get_child_to_parent_hashmap(
                         hashmap.insert(leaf_slice, hash);
                     }
                 }
+                _ => {
+                    warn!("Not a mkfs node");
+                    return (Err(PeerError::InvalidPacket));
+                }
+            }
+        }
+        _ => {
+            warn!("Not the datum we are looking for");
+            return (Err(PeerError::InvalidPacket));
+        }
+    }
+    return Ok(());
+}
+
+pub fn get_children(
+    action: &Action,
+    maps: Arc<
+        Mutex<(
+            HashMap<[u8; 32], [u8; 32]>,
+            HashMap<[u8; 32], Vec<[u8; 32]>>,
+            HashMap<[u8; 32], String>,
+        )>,
+    >,
+) -> Result<(), PeerError> {
+    match action {
+        Action::ProcessDatum(data, address) => {
+            let data_type = match data.get(32) {
+                Some(d) => d.to_owned(),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            let mut hash = [0u8; 32];
+            let temp = match data.get(0..32) {
+                Some(d) => d,
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+            hash.copy_from_slice(temp);
+            match data_type {
+                0 => {
+                    let name = match maps.lock() {
+                        Ok(m) => match m.2.get(&hash) {
+                            Some(n) => n.to_string(),
+                            None => "/tmp/dump".to_string(),
+                        },
+                        Err(e) => {
+                            error!("Could not lock hash to name map because of {e}");
+                            panic!("Failed")
+                        }
+                    };
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    println!("Data [{name}] : {data:?}");
+                }
+                1 => {
+                    let data = match data.get(33..) {
+                        Some(d) => d,
+                        None => return (Err(PeerError::InvalidPacket)),
+                    };
+                    let leaves = data.chunks(32).map(|s| s.to_owned());
+                    for (i, leaf) in leaves.enumerate() {
+                        let mut leaf_slice = [0u8; 32];
+                        leaf_slice.copy_from_slice(&leaf);
+                        println!("[{i}] {leaf_slice:?}");
+                    }
+                }
+                2 => {}
                 _ => {
                     warn!("Not a mkfs node");
                     return (Err(PeerError::InvalidPacket));
