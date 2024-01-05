@@ -27,7 +27,7 @@ pub mod import_export {
         tokio::{
             join, select,
             task::{JoinError, JoinHandle},
-            time::{sleep, Sleep},
+            time::{sleep, timeout, Sleep, Timeout},
         },
     };
 
@@ -126,8 +126,7 @@ pub mod import_export {
         action_queue_state: Arc<QueueState>,
         sock_addr: SocketAddr,
     ) -> Result<Action, PeerError> {
-        /*Repeatedly peeks process queue to check  */
-        let task_handle = tokio::spawn(async move {
+        let action_or_timeout = timeout(Duration::from_millis(3000), async {
             loop {
                 /*Wait notify all from receive task */
                 let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
@@ -149,52 +148,11 @@ pub mod import_export {
                 }
             }
         });
-        let abort_task_handle = task_handle.abort_handle();
 
-        let timeout_handle = tokio::spawn(async move {
-            let timeout = sleep(Duration::from_secs(3)).await;
-            if abort_task_handle.is_finished() {
-                /*Never happens */
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
-            } else {
-                abort_task_handle.abort();
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
-            }
-        });
-        /* Return when either response time out or received a packet
-        corresponding */
-        select! {
-            timed_out = timeout_handle => {
-                match timed_out {
-                    Ok(result) => match result {
-                        Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
-                        _ => {
-                            error!("Should not happen");
-                            panic!("Shouldn't happen")
-                        },
-                    },
-                    Err(e) => {
-                        error!("{e}");
-                        panic!("time out task panicked")
-                    },
-                }
-            }
-            action = task_handle => {
-                match action {
-                    Ok(result) => match result {
-                        Ok(action) => return Ok(action),
-                        _ => {
-                            error!("Should not happen");
-                            panic!("Shouldn't happen")
-                        },
-                    },
-                    Err(e) => {
-                        error!("{e}");
-                        panic!("Timeout task panicked")
-                    },
-                }
-            }
-        };
+        match action_or_timeout.await {
+            Ok(result) => result,
+            Err(e) => Err(PeerError::ResponseTimeout),
+        }
     }
 
     #[async_recursion::async_recursion]
@@ -403,7 +361,8 @@ pub mod import_export {
     ) -> Result<Action, PeerError> {
         /*Spawns a task that peeks the process queue waiting for a packet
         from the given address with the given peer. */
-        let task_handle = tokio::spawn(async move {
+
+        let action_or_timeout = timeout(Duration::from_millis(3000), async {
             loop {
                 /*Wait notify all from receive task */
                 let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
@@ -428,53 +387,131 @@ pub mod import_export {
                 }
             }
         });
-        /*Handle that can be sent to a task and used to abort a given task. */
-        let abort_task_handle = task_handle.abort_handle();
 
-        /*Sleeps for the given duration then aborts the given task. */
-        let timeout_handle = tokio::spawn(async move {
-            let timeout = sleep(Duration::from_secs(3)).await;
-            if abort_task_handle.is_finished() {
-                /*Never happens */
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
-            } else {
-                abort_task_handle.abort();
-                return Err::<Action, PeerError>(PeerError::ResponseTimeout);
-            }
-        });
-        /* Return when either response time out or received a packet
-        corresponding */
-        select! {
-            timed_out = timeout_handle => {
-                match timed_out {
-                    Ok(result) => match result {
-                        Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
-                        _ => {
-                            error!("Should not happen");
-                            panic!("Shouldn't happen")
-                        },
-                    },
-                    Err(e) => {
-                        error!("{e}");
-                        panic!("Timeout task panicked")
-                    },
-                }
-            }
-            action = task_handle => {
-                match action {
-                    Ok(result) => match result {
-                        Ok(action) => return Ok(action),
-                        _ => {
-                            error!("Should not happen");
-                            panic!("Shouldn't happen")
-                        },
-                    },
-                    Err(e) => {
-                        error!("{e}");
-                        panic!("Timeout task panicked")
-                    },                }
-            }
-        };
+        match action_or_timeout.await {
+            Ok(result) => result,
+            Err(e) => Err(PeerError::ResponseTimeout),
+        }
+
+        // /*Handle that can be sent to a task and used to abort a given task. */
+        // let abort_task_handle = task_handle.abort_handle();
+
+        // /*Sleeps for the given duration then aborts the given task. */
+        // let timeout_handle = tokio::spawn(async move {
+        //     let timeout = sleep(Duration::from_secs(3)).await;
+        //     if abort_task_handle.is_finished() {
+        //         /*Never happens */
+        //         return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        //     } else {
+        //         abort_task_handle.abort();
+        //         return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        //     }
+        // });
+        // /* Return when either response time out or received a packet
+        // corresponding */
+        // select! {
+        //     timed_out = timeout_handle => {
+        //         match timed_out {
+        //             Ok(result) => match result {
+        //                 Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
+        //                 _ => {
+        //                     error!("Should not happen");
+        //                     panic!("Shouldn't happen")
+        //                 },
+        //             },
+        //             Err(e) => {
+        //                 error!("{e}");
+        //                 panic!("Timeout task panicked")
+        //             },
+        //         }
+        //     }
+        //     action = task_handle => {
+        //         match action {
+        //             Ok(result) => match result {
+        //                 Ok(action) => return Ok(action),
+        //                 _ => {
+        //                     error!("Should not happen");
+        //                     panic!("Shouldn't happen")
+        //                 },
+        //             },
+        //             Err(e) => {
+        //                 error!("{e}");
+        //                 panic!("Timeout task panicked")
+        //             },                }
+        //     }
+        // };
+        // let task_handle = tokio::spawn(async move {
+        //     loop {
+        //         /*Wait notify all from receive task */
+        //         let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+        //             Some(front) => front,
+        //             None => {
+        //                 process_queue_readers_state.wait();
+        //                 continue;
+        //             }
+        //         };
+        //         match front {
+        //             Action::ProcessDatum(datum, addr) => {
+        //                 let mut datum_hash = [0u8; 32];
+        //                 datum_hash.copy_from_slice(&datum.as_slice()[0..32]);
+        //                 if (addr == sock_addr) && (datum_hash == hash) {
+        //                     break Ok::<Action, PeerError>(Action::ProcessDatum(datum, addr));
+        //                 } else {
+        //                     continue;
+        //                 }
+        //             }
+        //             Action::ProcessNoDatum(addr) => break Err(PeerError::NoDatum),
+        //             _ => continue,
+        //         }
+        //     }
+        // });
+        // /*Handle that can be sent to a task and used to abort a given task. */
+        // let abort_task_handle = task_handle.abort_handle();
+
+        // /*Sleeps for the given duration then aborts the given task. */
+        // let timeout_handle = tokio::spawn(async move {
+        //     let timeout = sleep(Duration::from_secs(3)).await;
+        //     if abort_task_handle.is_finished() {
+        //         /*Never happens */
+        //         return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        //     } else {
+        //         abort_task_handle.abort();
+        //         return Err::<Action, PeerError>(PeerError::ResponseTimeout);
+        //     }
+        // });
+        // /* Return when either response time out or received a packet
+        // corresponding */
+        // select! {
+        //     timed_out = timeout_handle => {
+        //         match timed_out {
+        //             Ok(result) => match result {
+        //                 Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
+        //                 _ => {
+        //                     error!("Should not happen");
+        //                     panic!("Shouldn't happen")
+        //                 },
+        //             },
+        //             Err(e) => {
+        //                 error!("{e}");
+        //                 panic!("Timeout task panicked")
+        //             },
+        //         }
+        //     }
+        //     action = task_handle => {
+        //         match action {
+        //             Ok(result) => match result {
+        //                 Ok(action) => return Ok(action),
+        //                 _ => {
+        //                     error!("Should not happen");
+        //                     panic!("Shouldn't happen")
+        //                 },
+        //             },
+        //             Err(e) => {
+        //                 error!("{e}");
+        //                 panic!("Timeout task panicked")
+        //             },                }
+        //     }
+        // };
     }
 
     pub fn handshake(
@@ -708,24 +745,23 @@ mod tests {
         /*Pas derriere un nat */
         // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
-        // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
+        let sock_addr: SocketAddr = "178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
-        {
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
-            );
-            // Queue::lock_and_push(
-            //     Arc::clone(&action_queue),
-            //     action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
-            // );
-            // Queue::lock_and_push(
-            //     Arc::clone(&action_queue),
-            //     action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-            // );
-            QueueState::set_non_empty_queue(action_queue_state.clone());
-        }
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            server_sock_addr4,
+        );
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            sock_addr,
+        );
         // let hash = [
         //     211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
         //     191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
@@ -907,6 +943,9 @@ mod tests {
         let action_queue_state = Arc::clone(&queues.6);
         let send_queue = Arc::clone(&queues.1);
         let send_queue_state = Arc::clone(&queues.7);
+        let process_queue = Arc::clone(&queues.3);
+        let process_queue_state = Arc::clone(&queues.8);
+        let process_queue_readers_state = Arc::clone(&queues.9);
 
         let mut my_data = Peer::new();
         my_data.set_name("nist".to_string());
@@ -926,11 +965,11 @@ mod tests {
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         /*Pas derriere un nat */
-        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
+        let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
-        let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
+        // let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
         // let sock_addr: SocketAddr = "[2a02:842a:853e:b501:7211:24ff:fe8c:d728]:28469".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr = "81.220.68.200:23834".parse().unwrap();
@@ -939,23 +978,24 @@ mod tests {
         keep_alive_to_peer(
             action_queue.clone(),
             action_queue_state.clone(),
-            server_sock_addr4,
+            sock_addr,
             /*en nanosecs */
-            30000000000,
+            5000000000,
         );
-        {
-            Queue::lock_and_push(
-                send_queue.clone(),
-                (
-                    PacketBuilder::hello_packet(
-                        None,
-                        my_data.get_name().unwrap().as_bytes().to_vec(),
-                    ),
-                    sock_addr,
-                ),
-            );
-            QueueState::set_non_empty_queue(send_queue_state.clone());
-        }
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            server_sock_addr4.clone(),
+        );
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            sock_addr.clone(),
+        );
         // keep_alive_to_peer(
         //     action_queue,
         //     action_queue_state,

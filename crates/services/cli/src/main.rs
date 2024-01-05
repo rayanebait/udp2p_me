@@ -174,7 +174,7 @@ async fn main() -> Result<()> {
             let process_queue_readers_state = Arc::clone(&queues.9);
 
             let mut my_data = Peer::new();
-            my_data.set_name(vec![97, 110, 105, 116]);
+            my_data.set_name("nist".to_string());
             let my_data = Arc::new(my_data);
 
             task_launcher(
@@ -216,7 +216,7 @@ async fn main() -> Result<()> {
                             sleep(Duration::from_millis(100)).await;
                             let guard = active_peers.lock().unwrap();
                             /*If panics here, means the packet received had invalid hash (body length<32) */
-                            match guard.addr_map.get(&sock_addr) {
+                            match guard.get(sock_addr) {
                                 Some(peer) => break peer.get_root_hash(),
                                 None => continue,
                             }
@@ -293,7 +293,7 @@ async fn main() -> Result<()> {
             let process_queue_readers_state = Arc::clone(&queues.9);
 
             let mut my_data = Peer::new();
-            my_data.set_name(vec![97, 110, 105, 116]);
+            my_data.set_name("nist".to_string());
             let my_data = Arc::new(my_data);
 
             task_launcher(

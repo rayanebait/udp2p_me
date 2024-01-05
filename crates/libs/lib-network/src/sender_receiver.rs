@@ -28,11 +28,10 @@ pub fn receiver4(
                 }
             };
 
-            debug!(
-                "Received {} packet from {}: {:?}\n",
+            println!(
+                "Received {} packet from {}\n",
                 packet.get_packet_type(),
                 sock_addr,
-                packet
             );
 
             Queue::lock_and_push(Arc::clone(&receive_queue), (packet, sock_addr));
@@ -57,7 +56,7 @@ pub fn receiver6(
                 }
             };
 
-            debug!(
+            println!(
                 "Received {} packet from {} : {:?}\n",
                 packet.get_packet_type(),
                 sock_addr,
@@ -115,7 +114,7 @@ pub fn sender(
 
             match sent {
                 Ok(size) => {
-                    debug!(
+                    println!(
                         "Sending {} packet to {}\n",
                         packet.get_packet_type(),
                         sock_addr

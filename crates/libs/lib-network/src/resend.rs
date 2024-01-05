@@ -4,7 +4,7 @@ use crate::{
     action::Action,
     congestion_handler::{self, PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
-    peer::ActivePeers,
+    peer::ActivePeers, import_export::keep_alive_to_peer,
 };
 use std::{
     net::SocketAddr,
@@ -29,10 +29,11 @@ pub fn resend_task(
         let server_socket_addr6: SocketAddr =
             "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         loop {
-            sleep(Duration::from_millis(500));
+            sleep(Duration::from_millis(3000));
             // pending_ids_state.wait();
             let (addr_to_send_nat_trav, packet_to_resend) =
                 PendingIds::packets_to_resend(Arc::clone(&pending_ids));
+            
             Queue::lock_and_push_mul(sending_queue.clone(), packet_to_resend);
             QueueState::set_non_empty_queue(sending_queue_state.clone());
 
