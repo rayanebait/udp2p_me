@@ -224,7 +224,6 @@ pub fn get_children(
                 }
                 2 => {
                     warn!("Found a directory, not a valid file.");
-                    println!("Not a valid file.");
                     return (Err(PeerError::InvalidPacket));
                 }
                 _ => {
@@ -505,4 +504,40 @@ pub mod test {
     //     // get_name_to_hash_hashmap(&action, &mut n_to_h_hashmap, c_to_p_hashmap, h_to_n_hashmap);
     //     // println!("{n_to_h_hashmap:?}");
     // }
+
+    #[test]
+    fn lib_network_store_flatten() {
+        let mut children: Vec<SimpleNode> = (1..11)
+            .map(|i| SimpleNode {
+                name: i.to_string(),
+                hash: [i as u8; 32],
+                children: None,
+                data: Some(vec![i as u8; 5]),
+            })
+            .collect();
+
+        let mut children2: Vec<SimpleNode> = (11..21)
+            .map(|i| SimpleNode {
+                name: i.to_string(),
+                hash: [i as u8; 32],
+                children: None,
+                data: Some(vec![i as u8; 5]),
+            })
+            .collect();
+
+        children[0].children = Some(children2);
+
+        let parent = SimpleNode {
+            name: "root".to_string(),
+            hash: [0u8; 32],
+            children: Some(children),
+            data: None,
+        };
+
+        println!("Node : {parent:?}");
+
+        let data = parent.flatten();
+
+        println!("Data : {data:?}");
+    }
 }
