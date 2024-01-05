@@ -64,7 +64,7 @@ pub fn handle_packet_task(
                 }
                 Err(HandlingError::InvalidPacketError) => {
                     debug!("[handle packet task] Invalid packet error");
-                    return
+                    return;
                 }
                 _ => {
                     error!("Should not happen");
@@ -202,9 +202,7 @@ fn handle_request_packet(
             };
         }
         /*Invalid packet, should send error*/
-        _ => {
-            Err(HandlingError::InvalidPacketError)
-        }
+        _ => Err(HandlingError::InvalidPacketError),
     }
 }
 
@@ -270,8 +268,6 @@ fn handle_response_packet(
             false => Err(HandlingError::InvalidHashError),
         },
         PacketType::NoDatum => Ok(Action::ProcessNoDatum(socket_addr)),
-        _ => {
-            return Err(HandlingError::InvalidPacketError)
-        }
+        _ => return Err(HandlingError::InvalidPacketError),
     }
 }

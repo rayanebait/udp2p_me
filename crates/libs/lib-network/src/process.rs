@@ -102,12 +102,7 @@ pub fn process_action(
             /*Send Hello reply then process the hello. Fails when the name is invalid utf8.*/
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHelloReply(
-                    id,
-                    my_data.get_extensions(),
-                    my_name,
-                    sock_addr,
-                ),
+                Action::SendHelloReply(id, my_data.get_extensions(), my_name, sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             /*Add peer and set peer timer (30s) */
@@ -229,9 +224,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::UnknownPeer) => {
-                    ()
-                }
+                Err(PeerError::UnknownPeer) => (),
                 Err(e) => {
                     error!("{e}");
                     panic!("Unkown error in process_action {}\n", e)
@@ -255,9 +248,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::UnknownPeer) => {
-                    ()
-                }
+                Err(PeerError::UnknownPeer) => (),
                 Err(e) => {
                     error!("{e}");
                     panic!("Unkown error in process_action {}\n", e)
@@ -297,7 +288,6 @@ pub fn process_action(
             } else {
                 return;
             }
-
 
             Queue::lock_and_push(
                 Arc::clone(&action_queue),

@@ -153,7 +153,7 @@ impl<T: Clone> Queue<T> {
         //     queue_guard.pop_front();
         //     queue_guard.push_back(data);
         // } else {
-            queue_guard.push_back(data);
+        queue_guard.push_back(data);
         // }
     }
     pub fn lock_and_push(queue: Arc<Mutex<Queue<T>>>, data: T) {
@@ -190,7 +190,7 @@ impl<T: Clone> Queue<T> {
         };
 
         // if queue_guard.can_pop {
-            queue_guard.pop_front()
+        queue_guard.pop_front()
         // } else {
         //     queue_guard.peek_front()
         // }
@@ -342,15 +342,15 @@ impl PendingIds {
         peer_addr: &SocketAddr,
     ) {
         if packet.is(*&PacketType::NatTraversal) {
-            return
-        } else if packet.is(*&PacketType::NatTraversalRequest){
-            return
-        }else if packet.is(*&PacketType::Error){
-            return
-        }else if packet.is(*&PacketType::ErrorReply){
-            return
+            return;
+        } else if packet.is(*&PacketType::NatTraversalRequest) {
+            return;
+        } else if packet.is(*&PacketType::Error) {
+            return;
+        } else if packet.is(*&PacketType::ErrorReply) {
+            return;
         } else if packet.is_response() {
-            return
+            return;
         }
 
         let mut pending_ids_guard = match pending_ids.lock() {
@@ -404,7 +404,7 @@ impl PendingIds {
         socket_addr: SocketAddr,
     ) -> Result<SocketAddr, CongestionHandlerError> {
         if *packet.get_packet_type() == PacketType::NatTraversal {
-            return Ok(socket_addr)
+            return Ok(socket_addr);
         }
         /*get mutex to check and pop id if it is a response */
         let mut pending_ids_guard = match pending_ids.lock() {
