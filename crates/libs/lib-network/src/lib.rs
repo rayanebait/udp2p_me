@@ -276,16 +276,12 @@ pub mod import_export {
         //          if it is a tree -> get the list of children in order (parse the tree)
         // Step 3 : Repeat for each children
 
-        // let mut subtasks = vec![];
-        // let children: Option<Vec<[u8; 32]>>;
-
         // Step 1
         // Send a get datum with the first target hash
         Queue::lock_and_push(
             Arc::clone(&action_queue),
             Action::SendGetDatumWithHash(*&hash, *&sock_addr),
         );
-        // Set this every time ?
         QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
 
         match peek_until_datum_with_hash_from(
@@ -311,7 +307,6 @@ pub mod import_export {
                     Some(c) => {
                         let mut subtasks = vec![];
                         for n in c.into_iter() {
-                            // println!("Node {n:?}");
                             subtasks.push(download_file(
                                 Arc::clone(&peek_process_queue),
                                 Arc::clone(&process_queue_readers_state),
@@ -326,17 +321,13 @@ pub mod import_export {
                         node.children = Some(
                             completed
                                 .into_iter()
-                                .filter_map(|n| {
-                                    // println!("Node {:?}", &n);
-                                    // println!("Node {:?}", &n);
-                                    match n {
-                                        Ok(r) => Some(r),
-                                        Err(e) => {
-                                            warn!(
+                                .filter_map(|n| match n {
+                                    Ok(r) => Some(r),
+                                    Err(e) => {
+                                        warn!(
                                             "Failed to download child, file may be corrupted. {e}"
                                         );
-                                            None
-                                        }
+                                        None
                                     }
                                 })
                                 .collect::<Vec<SimpleNode>>(),

@@ -8,6 +8,8 @@ use lib_network::{
 use lib_web::discovery;
 use log::{debug, error, info, warn};
 use std::{
+    fs::File,
+    io::Write,
     net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -68,7 +70,7 @@ enum Commands {
         #[arg(short, long)]
         datum: Option<String>,
     },
-    /// Download the file from a hash
+    /// Download a file from a hash
     FetchFile {
         /// Address of the peer
         #[arg(short, long)]
@@ -76,10 +78,14 @@ enum Commands {
         /// Datum hash
         #[arg(short, long)]
         datum: String,
+        /// Output path
+        /// Default value is ./dump
+        #[arg(short, long)]
+        output: Option<String>,
     },
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 100)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10_000)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -116,14 +122,19 @@ async fn main() -> Result<()> {
         }
         Commands::GetDatum { peer, datum } => {
             log::info!("Fetching datum from peer {} with hash {}.", peer, datum);
-            let datum_bytes = match hex::decode(datum) {
-                Ok(h) => h,
+            let datum = match hex::decode(datum) {
+                Ok(h) => match <[u8; 32]>::try_from(h) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        bail!("Invalid root hash. Please check your input.");
+                    }
+                },
                 Err(e) => bail!("Failed to decode root hash. Please check your input."),
             };
             let packet = PacketBuilder::new()
                 .gen_id()
                 .packet_type(PacketType::GetDatum)
-                .body(datum_bytes)
+                .body(datum.to_vec())
                 .build()
                 .unwrap_or_default();
             println!("{packet:#?}");
@@ -152,10 +163,6 @@ async fn main() -> Result<()> {
                 }
             };
 
-            // let datum_bytes = match hex::decode(datum) {
-            //     Ok(h) => h,
-            //     Err(e) => bail!("Failed to decode root hash. Please check your input."),
-            // };
             let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
             let sock6 = Arc::new(
                 UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
@@ -190,11 +197,10 @@ async fn main() -> Result<()> {
             {
                 Queue::lock_and_push(
                     Arc::clone(&action_queue),
-                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                    Action::SendHello(None, "nist".to_string().into_bytes(), *&sock_addr),
                 );
                 QueueState::set_non_empty_queue(action_queue_state.clone());
             }
-            // sleep(Duration::from_secs(1)).await;
 
             let peer_hash = match peer_hash {
                 Some(h) => h,
@@ -231,7 +237,6 @@ async fn main() -> Result<()> {
                 }
             };
 
-            // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);
             fetch_subtree_from(
                 Arc::clone(&process_queue),
                 Arc::clone(&process_queue_readers_state),
@@ -264,8 +269,12 @@ async fn main() -> Result<()> {
                 Err(e) => error!("Got error {e}"),
             };
         }
-        Commands::FetchFile { peer, datum } => {
-            let datum = match hex::decode(datum) {
+        Commands::FetchFile {
+            peer,
+            datum,
+            output,
+        } => {
+            let hash = match hex::decode(datum) {
                 Ok(h) => match <[u8; 32]>::try_from(h) {
                     Ok(i) => i,
                     Err(e) => {
@@ -273,6 +282,19 @@ async fn main() -> Result<()> {
                     }
                 },
                 Err(e) => bail!("Failed to decode root hash. Please check your input."),
+            };
+
+            let path = match output {
+                Some(s) => s.to_string(),
+                None => "./dump".to_string(),
+            };
+
+            log::info!("Fetching file from peer {} for hash {}.", peer, &datum);
+            println!("Fetching file from peer {} for hash {}.", peer, &datum);
+
+            let mut file = match File::create(&path) {
+                Ok(f) => f,
+                Err(e) => bail!("Could not create or open file {} : {}", &path, e),
             };
 
             let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
@@ -309,41 +331,37 @@ async fn main() -> Result<()> {
             {
                 Queue::lock_and_push(
                     Arc::clone(&action_queue),
-                    Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                    Action::SendHello(None, "nist".to_string().into_bytes(), *&sock_addr),
                 );
                 QueueState::set_non_empty_queue(action_queue_state.clone());
             }
 
-            fetch_subtree_from(
+            let downloaded_file = download_file(
                 Arc::clone(&process_queue),
                 Arc::clone(&process_queue_readers_state),
                 Arc::clone(&action_queue),
                 Arc::clone(&action_queue_state),
                 Arc::clone(&maps),
-                // yoan_hash,
-                datum,
+                hash,
                 sock_addr,
             )
             .await;
 
-            match maps.lock() {
-                Ok(m) => {
-                    println!("\nFile tree :");
-                    let n_to_h_hashmap = get_name_to_hash_hashmap(&m.0, &m.2);
-                    let mut names: Vec<&String> = n_to_h_hashmap.keys().collect();
-                    names.sort();
-                    for n in names.into_iter() {
-                        let mut step = n.chars().filter(|ch| *ch == '/').count();
-                        if step > 0 {
-                            step -= 1;
+            match downloaded_file {
+                Ok(f) => {
+                    let content = f.flatten();
+                    match file.write_all(&content) {
+                        Ok(_) => println!("Download completed."),
+                        Err(e) => {
+                            println!("Failed to save file {e}");
+                            bail!("Failed to save file {e}")
                         }
-                        let mut carry = str::repeat("   ", step);
-                        carry.push_str("└──");
-                        println!("{carry} {n}");
-                        println!("   {carry} {}", hex::encode(n_to_h_hashmap.get(n).unwrap()));
                     }
                 }
-                Err(e) => error!("Got error {e}"),
+                Err(e) => {
+                    println!("Download failed {e}");
+                    bail!("Download failed {e}")
+                }
             };
         }
         _ => {
