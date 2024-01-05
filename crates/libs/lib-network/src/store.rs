@@ -171,7 +171,6 @@ pub fn get_children(
                         children: None,
                         data: Some(data.to_vec()),
                     };
-                    // println!("Node : {node:?}");
                     return Ok(node);
                 }
                 1 => {
