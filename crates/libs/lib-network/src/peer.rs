@@ -7,6 +7,8 @@ use std::{
 };
 use thiserror::Error;
 
+use crate::store;
+
 #[derive(Error, Debug)]
 pub enum PeerError {
     #[error("No public key.")]
@@ -31,11 +33,15 @@ pub enum PeerError {
     PeerTimedOut,
     #[error("No datum")]
     NoDatum,
+    #[error("Invalid name format")]
+    InvalidUTF8Name,
+    #[error("Name changed")]
+    NameChanged,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct Peer {
-    name: Option<Vec<u8>>,
+    name: Option<String>,
     addresses: Vec<SocketAddr>,
     root: Option<[u8; 32]>,
     public_key: Option<[u8; 64]>,
@@ -57,7 +63,7 @@ impl Peer {
         self.public_key = public_key;
         self
     }
-    pub fn set_name(&mut self, name: Vec<u8>) -> &mut Self {
+    pub fn set_name(&mut self, name: String) -> &mut Self {
         self.name = Some(name);
         self
     }
@@ -96,8 +102,8 @@ impl Peer {
             Some(&self.addresses)
         }
     }
-    pub fn get_name(&self) -> Option<Vec<u8>> {
-        self.name.clone()
+    pub fn get_name(&self) -> Option<&String> {
+        self.name.as_ref()
     }
     pub fn get_extensions(&self) -> Option<[u8; 4]> {
         *&self.extensions
@@ -133,7 +139,8 @@ When receiving any other packet:
     - */
 #[derive(Default)]
 pub struct ActivePeers {
-    pub addr_map: HashMap<SocketAddr, Peer>,
+    pub addr_map: HashMap<SocketAddr, String>,
+    pub peer_map: HashMap<String, Peer>,
 }
 
 impl ActivePeers {
@@ -143,8 +150,19 @@ impl ActivePeers {
     /*Add normal push pop and in set_... verify if peer exists, if not
     only create peer in set_peer_extensions_and_name not in root and pkey */
     pub fn push(&mut self, peer: &Peer) {
-        for addr in &peer.addresses {
-            self.addr_map.insert(*addr, peer.clone());
+        let peer_clone = peer.clone();
+        let name = peer.get_name();
+        match name {
+            Some(name)=>{
+                for addr in &peer.addresses {
+                    self.addr_map.insert(*addr, name.clone());
+                }
+                self.peer_map.insert(name.clone(), peer_clone);
+            }
+            None => {
+                debug!("Peer has no name");
+                return
+            }
         }
     }
     pub fn pop(&mut self, peer: &Peer) {
@@ -152,10 +170,28 @@ impl ActivePeers {
             self.addr_map.remove(addr);
         }
     }
+    pub fn get(&self, sock_addr: SocketAddr)->Option<&Peer>{
+        let peer_name = match self.addr_map.get(&sock_addr) {
+            Some(name) => name,
+            /*Ignore if peer doesn't exist */
+            _ => return None,
+        };
+
+        self.peer_map.get(peer_name)
+    }
+    pub fn get_mut(&mut self, sock_addr: SocketAddr)->Option<&mut Peer>{
+        let peer_name = match self.addr_map.get(&sock_addr) {
+            Some(name) => name,
+            /*Ignore if peer doesn't exist */
+            _ => return None,
+        };
+
+        self.peer_map.get_mut(peer_name)
+    }
     pub fn lock_and_get(
         active_peers: Arc<Mutex<ActivePeers>>,
         sock_addr: SocketAddr,
-    ) -> Option<Peer> {
+    ) -> Option<String> {
         let mut active_peers = match active_peers.lock() {
             Ok(active_peers) => active_peers,
             Err(e) => {
@@ -194,8 +230,13 @@ impl ActivePeers {
         sock_addr: SocketAddr,
         extensions: Option<[u8; 4]>,
         name: Vec<u8>,
-    ) {
-        /*DONE */
+    ) -> Result<(), PeerError>{
+        /*Peers are identified by name */
+        let name = match String::from_utf8(name) {
+            Ok(name)=> name,
+            Err(_)=> return Err(PeerError::InvalidUTF8Name),
+        };
+
         let mut active_peers = match active_peers.lock() {
             Ok(active_peers) => active_peers,
             Err(e) => {
@@ -203,27 +244,35 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        match active_peers.addr_map.get_mut(&sock_addr) {
-            Some(peer) => {
+        match active_peers.addr_map.get(&sock_addr) {
+            Some(stored_name) => {
                 // println!("KEEP PEER ALIVE {:?}", peer);
                 /*Keep alive */
                 info!("EXIST");
-                peer.set_timer();
-                return;
-            }
+                if name != *stored_name {
+                    return Err(PeerError::NameChanged)
+                }
+            },
             None => {
                 /*Create peer */
                 info!("CREATE");
                 let mut peer = Peer::new();
                 peer.add_address(sock_addr)
-                    .set_name(name.clone())
+                    .set_name(name)
                     .set_extensions(extensions)
                     .set_timer();
                 // println!("PUSHING PEER {}", String::from_utf8(name).unwrap());
                 active_peers.push(&peer);
-                return;
+                return Ok(());
             }
         };
+
+        match active_peers.peer_map.get_mut(&name){
+            Some(peer)=> peer.set_timer(),
+            None => return Err(PeerError::Unknown),
+
+        };
+        return Ok(());
     }
 
     pub fn set_peer_root(
@@ -239,14 +288,12 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        let peer = match active_peers.addr_map.get_mut(&sock_addr) {
-            Some(peer) => peer,
-            /*Ignore if peer doesn't exist */
-            _ => return Err(PeerError::UnknownPeer),
+        let peer = match active_peers.get_mut(sock_addr){
+            Some(peer)=>peer,
+            None=> return Err(PeerError::UnknownPeer),
         };
-
         /*keep alive */
-        match peer.has_timed_out(3000) {
+        match peer.has_timed_out(30000) {
             /*Hasn't timed out */
             Ok(()) => {
                 peer.set_hash(root);
@@ -277,12 +324,12 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        let peer = match active_peers.addr_map.get_mut(&sock_addr) {
-            Some(peer) => peer,
-            _ => return Err(PeerError::UnknownPeer),
+        let peer = match active_peers.get_mut(sock_addr){
+            Some(peer)=>peer,
+            None=> return Err(PeerError::UnknownPeer),
         };
 
-        match peer.has_timed_out(3000) {
+        match peer.has_timed_out(30000) {
             /*Hasn't timed out */
             Ok(()) => {
                 peer.set_public_key(public_key);
@@ -314,12 +361,13 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        let mut peer = match active_peers.addr_map.get_mut(&sock_addr) {
-            Some(peer) => peer,
-            _ => return Err(PeerError::UnknownPeer),
+
+        let peer = match active_peers.get_mut(sock_addr){
+            Some(peer)=>peer,
+            None=> return Err(PeerError::UnknownPeer),
         };
 
-        match peer.has_timed_out(3000) {
+        match peer.has_timed_out(30000) {
             /*Hasn't timed out */
             Ok(()) => {
                 peer.set_timer();

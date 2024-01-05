@@ -375,8 +375,8 @@ impl PacketBuilder {
         let body_length = body.len();
 
         self.length = match body_length {
-            0..=1024 => Some(body_length),
-            1025.. => panic!("Invalid packet"),
+            0..=1128 => Some(body_length),
+            1129.. => panic!("Invalid packet"),
             _ => panic!("Shouldn't happen"),
         };
 

@@ -48,7 +48,11 @@ pub mod import_export {
         for attempt in 0..10 {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHello(None, my_data.get_name().unwrap(), server_sock_addr),
+                Action::SendHello(
+                    None,
+                    my_data.get_name().unwrap().as_bytes().to_vec(),
+                    server_sock_addr,
+                ),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             debug!("attempt : {}", attempt);
@@ -364,7 +368,7 @@ pub mod import_export {
                             completed
                                 .into_iter()
                                 .filter_map(|n| {
-                                    println!("Node {:?}", &n);
+                                    // println!("Node {:?}", &n);
                                     match n {
                                         Ok(r) => Some(r),
                                         Err(e) => {
@@ -474,25 +478,22 @@ pub mod import_export {
     }
 
     pub fn handshake(
-            peek_process_queue: Arc<RwLock<Queue<Action>>>,
-            process_queue_readers_state: Arc<QueueState>,
-            action_queue: Arc<Mutex<Queue<Action>>>,
-            action_queue_state: Arc<QueueState>,
-            sock_addr: SocketAddr,
-    ){
+        peek_process_queue: Arc<RwLock<Queue<Action>>>,
+        process_queue_readers_state: Arc<QueueState>,
+        action_queue: Arc<Mutex<Queue<Action>>>,
+        action_queue_state: Arc<QueueState>,
+        sock_addr: SocketAddr,
+    ) {
         Queue::lock_and_push_mul(
             action_queue,
             vec![
                 Action::SendHello(None, vec![97, 110, 105, 116], sock_addr),
                 Action::SendRoot(None, sock_addr),
                 Action::SendPublicKey(None, sock_addr),
-            ]
+            ],
         );
         QueueState::set_non_empty_queue(action_queue_state);
-
     }
-
-
 }
 
 #[cfg(test)]
@@ -594,7 +595,7 @@ mod tests {
         let active_peers = ActivePeers::build_mutex();
 
         let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
+        my_data.set_name("nist".to_string());
         let my_data = Arc::new(my_data.clone());
 
         let receiving = receiver4(
@@ -661,24 +662,20 @@ mod tests {
         /*DON'T USE ::1 for ipv6. Doesn't work. Seems like it
         binds to an ipv6 compatible ipv4 address and not a true
         ipv6 address so the socket doesn't send anything. */
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0))
+                .await
+                .unwrap(),
+        );
         // let sock6 = Arc::new(
         //     UdpSocket::bind(SocketAddr::new(
-        //         "::1".parse().unwrap(),
+        //         "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+        //         // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
         //         0,
         //     ))
         //     .await
         //     .unwrap(),
         // );
-        let sock6 = Arc::new(
-            UdpSocket::bind(SocketAddr::new(
-                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
-                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
-                0,
-            ))
-            .await
-            .unwrap(),
-        );
-            
 
         let maps = build_tree_mutex();
         let queues = build_queues();
@@ -692,7 +689,7 @@ mod tests {
         let process_queue_readers_state = Arc::clone(&queues.9);
 
         let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
+        my_data.set_name("nist".to_string());
         let my_data = Arc::new(my_data);
 
         task_launcher(
@@ -750,7 +747,7 @@ mod tests {
                 sleep(Duration::from_millis(100)).await;
                 let guard = active_peers.lock().unwrap();
                 /*If panics here, means the packet received had invalid hash (body length<32) */
-                match guard.addr_map.get(&server_sock_addr4) {
+                match guard.get(*&server_sock_addr4) {
                     Some(peer) => break peer.get_root_hash(),
                     None => continue,
                 }
@@ -802,16 +799,21 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_file() {
-        env_logger::init();
+        // env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        // let sock6 = Arc::new(
+        //     UdpSocket::bind(SocketAddr::new(
+        //         // "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+        //         // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
+        //         0,
+        //     ))
+        //     .await
+        //     .unwrap(),
+        // );
         let sock6 = Arc::new(
-            UdpSocket::bind(SocketAddr::new(
-                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
-                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
-                0,
-            ))
-            .await
-            .unwrap(),
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0))
+                .await
+                .unwrap(),
         );
 
         let maps = build_tree_mutex();
@@ -826,7 +828,7 @@ mod tests {
         let process_queue_readers_state = Arc::clone(&queues.9);
 
         let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
+        my_data.set_name("nist".to_string());
         let my_data = Arc::new(my_data);
 
         task_launcher(
@@ -839,13 +841,13 @@ mod tests {
 
         /*jch */
         let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
-        {
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
-            );
-            QueueState::set_non_empty_queue(action_queue_state.clone());
-        }
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            server_sock_addr4.clone(),
+        );
 
         let root_hash = <[u8; 32]>::try_from(
             hex::decode("19629b381026ff80f9b72ff6ea1a06ce6942081fdfa251611a950c081cd99629")
@@ -907,7 +909,7 @@ mod tests {
         let send_queue_state = Arc::clone(&queues.7);
 
         let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
+        my_data.set_name("nist".to_string());
         let my_data = Arc::new(my_data);
 
         task_launcher(
@@ -945,7 +947,10 @@ mod tests {
             Queue::lock_and_push(
                 send_queue.clone(),
                 (
-                    PacketBuilder::hello_packet(None, my_data.get_name().unwrap()),
+                    PacketBuilder::hello_packet(
+                        None,
+                        my_data.get_name().unwrap().as_bytes().to_vec(),
+                    ),
                     sock_addr,
                 ),
             );
@@ -979,7 +984,7 @@ mod tests {
         let action_queue_state = Arc::clone(&queues.6);
 
         let mut my_data = Peer::new();
-        my_data.set_name(vec![97, 110, 105, 116]);
+        my_data.set_name("nist".to_string());
         let my_data = Arc::new(my_data);
 
         task_launcher(

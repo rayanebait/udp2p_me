@@ -53,7 +53,6 @@ pub fn receiver6(
             let (sock_addr, packet) = match Packet::recv_from(&sock6).await {
                 Ok(packet_and_addr) => packet_and_addr,
                 _ => {
-                    println!("continue");
                     continue;
                 }
             };
@@ -107,11 +106,6 @@ pub fn sender(
                     continue;
                 }
             };
-            debug!(
-                "Sending {} packet to {}\n",
-                packet.get_packet_type(),
-                sock_addr
-            );
 
             PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
             let sent = match sock_addr {

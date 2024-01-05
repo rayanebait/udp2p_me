@@ -91,6 +91,7 @@ pub fn process_action(
                         //    map: Hashmap<SocketAddr, Peer>
                         //}
 ) {
+    let my_name = my_data.get_name().unwrap().as_bytes().to_vec();
     match action {
         Action::ProcessNoOp(sock_addr) => {
             /*DONE */
@@ -98,18 +99,18 @@ pub fn process_action(
         }
         Action::ProcessHello(id, extensions, name, sock_addr) => {
             /*DONE */
-            /*Send Hello reply then process the hello. Never fails. */
+            /*Send Hello reply then process the hello. Fails when the name is invalid utf8.*/
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
                 Action::SendHelloReply(
                     id,
                     my_data.get_extensions(),
-                    my_data.get_name().unwrap(),
+                    my_name,
                     sock_addr,
                 ),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            /*Add peer and set peer timer (180s) */
+            /*Add peer and set peer timer (30s) */
             ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
             return;
         }
@@ -297,9 +298,10 @@ pub fn process_action(
                 return;
             }
 
+
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHello(my_data.get_extensions(), my_data.get_name().unwrap(), addr),
+                Action::SendHello(my_data.get_extensions(), my_name, addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             return;

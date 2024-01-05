@@ -19,7 +19,7 @@ use std::{
 /*Remark: Packets/ids are popped only when received. */
 pub fn resend_task(
     pending_ids: Arc<Mutex<PendingIds>>,
-    // peek_active_peers: Arc<Mutex<ActivePeers>>,
+    peek_active_peers: Arc<Mutex<ActivePeers>>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
 ) {
