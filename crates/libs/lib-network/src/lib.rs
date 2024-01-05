@@ -455,6 +455,27 @@ pub mod import_export {
             }
         };
     }
+
+    pub fn handshake(
+            peek_process_queue: Arc<RwLock<Queue<Action>>>,
+            process_queue_readers_state: Arc<QueueState>,
+            action_queue: Arc<Mutex<Queue<Action>>>,
+            action_queue_state: Arc<QueueState>,
+            sock_addr: SocketAddr,
+    ){
+        Queue::lock_and_push_mul(
+            action_queue,
+            vec![
+                Action::SendHello(None, vec![97, 110, 105, 116], sock_addr),
+                Action::SendRoot(None, sock_addr),
+                Action::SendPublicKey(None, sock_addr),
+            ]
+        );
+        QueueState::set_non_empty_queue(action_queue_state);
+
+    }
+
+
 }
 
 #[cfg(test)]
@@ -637,7 +658,7 @@ mod tests {
             .await
             .unwrap(),
         );
-        
+            
 
         let maps = build_tree_mutex();
         let queues = build_queues();
