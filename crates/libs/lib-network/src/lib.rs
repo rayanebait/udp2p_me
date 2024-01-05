@@ -835,28 +835,24 @@ mod tests {
         };
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1000)]
     async fn register_and_fetch_file() {
         // env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0))
+                .await
+                .unwrap(),
+        );
         // let sock6 = Arc::new(
         //     UdpSocket::bind(SocketAddr::new(
-        //         // "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+        //         "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
         //         // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
         //         0,
         //     ))
         //     .await
         //     .unwrap(),
         // );
-        let sock6 = Arc::new(
-            UdpSocket::bind(SocketAddr::new(
-                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
-                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
-                0,
-            ))
-            .await
-            .unwrap(),
-        );
 
         let maps = build_tree_mutex();
         let queues = build_queues();
@@ -883,12 +879,21 @@ mod tests {
 
         /*jch */
         let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        /*droso-srv */
+        let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         handshake(
             process_queue.clone(),
             process_queue_readers_state.clone(),
             action_queue.clone(),
             action_queue_state.clone(),
             server_sock_addr4.clone(),
+        );
+        handshake(
+            process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            sock_addr.clone(),
         );
 
         let root_hash = <[u8; 32]>::try_from(
@@ -930,6 +935,7 @@ mod tests {
             Ok(f) => println!("Got file {f:?}"),
             Err(e) => println!("Failed to get file"),
         }
+        println!("FINISHED");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
