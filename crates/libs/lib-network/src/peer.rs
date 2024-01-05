@@ -2,17 +2,10 @@ use log::{debug, error, info, warn};
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{
-        Arc,
-        Mutex
-    },
-    time::{
-        Duration,
-        Instant
-    }
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use thiserror::Error;
-
 
 #[derive(Error, Debug)]
 pub enum PeerError {
@@ -109,17 +102,17 @@ impl Peer {
     pub fn get_extensions(&self) -> Option<[u8; 4]> {
         *&self.extensions
     }
-    pub fn has_timed_out(&self, time_out: u64)->Result<(), PeerError>{
+    pub fn has_timed_out(&self, time_out: u64) -> Result<(), PeerError> {
         match self.timer {
-            Some(timer)=> {
+            Some(timer) => {
                 let elapsed_dur = timer.elapsed();
 
-                if elapsed_dur > Duration::from_millis(time_out){
-                    return Err(PeerError::PeerTimedOut)
+                if elapsed_dur > Duration::from_millis(time_out) {
+                    return Err(PeerError::PeerTimedOut);
                 } else {
-                    return Ok(())
+                    return Ok(());
                 }
-            },
+            }
             None => return Err(PeerError::UnknownPeer),
         }
     }
@@ -214,13 +207,13 @@ impl ActivePeers {
             Some(peer) => {
                 // println!("KEEP PEER ALIVE {:?}", peer);
                 /*Keep alive */
-                println!("EXIST");
+                info!("EXIST");
                 peer.set_timer();
                 return;
             }
             None => {
                 /*Create peer */
-                println!("CREATE");
+                info!("CREATE");
                 let mut peer = Peer::new();
                 peer.add_address(sock_addr)
                     .set_name(name.clone())
@@ -255,10 +248,10 @@ impl ActivePeers {
         /*keep alive */
         match peer.has_timed_out(3000) {
             /*Hasn't timed out */
-            Ok(())=>{
+            Ok(()) => {
                 peer.set_hash(root);
-                return Ok(())
-            },
+                return Ok(());
+            }
             /*Has timedout */
             Err(PeerError::PeerTimedOut) => {
                 let peer_clone = peer.clone();
@@ -268,8 +261,7 @@ impl ActivePeers {
                 return Err(PeerError::PeerTimedOut);
             }
             Err(PeerError::UnknownPeer) => Err(PeerError::UnknownPeer),
-            _=> panic!("Shouldn't happen"),
-            
+            _ => panic!("Shouldn't happen"),
         }
     }
     pub fn set_peer_public_key(
@@ -292,10 +284,10 @@ impl ActivePeers {
 
         match peer.has_timed_out(3000) {
             /*Hasn't timed out */
-            Ok(())=>{
+            Ok(()) => {
                 peer.set_public_key(public_key);
-                return Ok(())
-            },
+                return Ok(());
+            }
             /*Has timedout */
             Err(PeerError::PeerTimedOut) => {
                 let peer_clone = peer.clone();
@@ -305,10 +297,8 @@ impl ActivePeers {
                 return Err(PeerError::PeerTimedOut);
             }
             Err(PeerError::UnknownPeer) => Err(PeerError::UnknownPeer),
-            _=> panic!("Shouldn't happen"),
-            
+            _ => panic!("Shouldn't happen"),
         }
-
     }
     /*Checks the internal timer attached to peer to see if it is elapsed */
     /*The keep alive is done internally in every other methods  */
@@ -333,15 +323,14 @@ impl ActivePeers {
             /*Hasn't timed out */
             Ok(()) => {
                 peer.set_timer();
-                return Ok(())
+                return Ok(());
             }
             Err(PeerError::PeerTimedOut) => {
                 active_peers.addr_map.remove(&sock_addr);
-                return Err(PeerError::PeerTimedOut)
+                return Err(PeerError::PeerTimedOut);
             }
-            Err(PeerError::UnknownPeer) =>
-                return Err(PeerError::Unknown),
-            _=>panic!("Shouldn't happen"),
+            Err(PeerError::UnknownPeer) => return Err(PeerError::Unknown),
+            _ => panic!("Shouldn't happen"),
         }
     }
 }

@@ -292,7 +292,7 @@ pub mod import_export {
         Ok(())
     }
 
-    // #[async_recursion::async_recursion]
+    #[async_recursion::async_recursion]
     pub async fn download_file(
         peek_process_queue: Arc<RwLock<Queue<Action>>>,
         process_queue_readers_state: Arc<QueueState>,
@@ -307,10 +307,17 @@ pub mod import_export {
         >,
         hash: [u8; 32],
         sock_addr: SocketAddr,
-    ) -> Result<(), PeerError> {
-        // let mut subtasks = vec![];
-        let children: Option<Vec<[u8; 32]>>;
+    ) -> Result<SimpleNode, PeerError> {
+        // To download a complete file :
+        // Step 1 : get the first datum from the desired hash
+        // Step 2 : If it is a chunk -> store it
+        //          if it is a tree -> get the list of children in order (parse the tree)
+        // Step 3 : Repeat for each children
 
+        // let mut subtasks = vec![];
+        // let children: Option<Vec<[u8; 32]>>;
+
+        // Step 1
         // Send a get datum with the first target hash
         Queue::lock_and_push(
             Arc::clone(&action_queue),
@@ -329,47 +336,57 @@ pub mod import_export {
         .await
         {
             Ok(datum_action) => {
-                get_children(&datum_action, Arc::clone(&maps));
+                // Step 2
+                let mut node = match get_children(&datum_action, Arc::clone(&maps)) {
+                    Ok(n) => n,
+                    Err(e) => {
+                        error!("Failed to download datum");
+                        return Err(PeerError::InvalidPacket);
+                    }
+                };
+                match node.children {
+                    Some(c) => {
+                        let mut subtasks = vec![];
+                        for n in c.into_iter() {
+                            // println!("Node {n:?}");
+                            subtasks.push(download_file(
+                                Arc::clone(&peek_process_queue),
+                                Arc::clone(&process_queue_readers_state),
+                                Arc::clone(&action_queue),
+                                Arc::clone(&action_queue_state),
+                                Arc::clone(&maps),
+                                n.hash,
+                                sock_addr,
+                            ));
+                        }
+                        let completed = join_all(subtasks).await;
+                        node.children = Some(
+                            completed
+                                .into_iter()
+                                .filter_map(|n| {
+                                    println!("Node {:?}", &n);
+                                    match n {
+                                        Ok(r) => Some(r),
+                                        Err(e) => {
+                                            warn!(
+                                            "Failed to download child, file may be corrupted. {e}"
+                                        );
+                                            None
+                                        }
+                                    }
+                                })
+                                .collect::<Vec<SimpleNode>>(),
+                        );
+                        return Ok(node);
+                    }
+                    None => return Ok(node),
+                }
             }
             Err(PeerError::ResponseTimeout) => {
                 return Err(PeerError::ResponseTimeout);
-                // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
             }
             _ => todo!(),
         };
-        // match children {
-        //     Some(childs) => {
-        //         // let mut hash_vec = vec![];
-        //         for child_hash in childs {
-        //             debug!("Asking for child {:?}", &child_hash);
-        //             subtasks.push(fetch_subtree_from(
-        //                 Arc::clone(&peek_process_queue),
-        //                 Arc::clone(&process_queue_readers_state),
-        //                 Arc::clone(&action_queue),
-        //                 Arc::clone(&action_queue_state),
-        //                 Arc::clone(&maps),
-        //                 child_hash,
-        //                 sock_addr,
-        //             ));
-        //             // hash_vec.push(Action::SendGetDatumWithHash(child_hash, sock_addr));
-        //         }
-
-        //         // Queue::lock_and_push_mul(Arc::clone(&action_queue), hash_vec);
-        //     }
-        //     None => {
-        //         debug!("no childs");
-        //         return Ok(());
-        //     }
-        // };
-        // let completed = join_all(subtasks).await;
-        // for result in completed {
-        //     match result {
-        //         Ok(()) => continue,
-        //         Err(e) => return Err(e),
-        //     }
-        // }
-
-        Ok(())
     }
 
     pub async fn peek_until_datum_with_hash_from(
@@ -494,6 +511,7 @@ mod tests {
         futures::join,
         import_export::*,
         lib_file::mk_fs::{self, MktFsNode},
+        log::{debug, error, info, warn},
         nanorand::{wyrand::WyRand, BufferedRng, Rng},
         std::sync::{Arc, Mutex},
         std::{net::SocketAddr, path::PathBuf},
@@ -638,9 +656,10 @@ mod tests {
     Sometimes when receiving helloreply, doesn't even attempt to create peer.  */
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_tree() {
+        env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
-        /*DON'T USE ::1 for ipv6. Doesn't work. Seems like it 
-        binds to an ipv6 compatible ipv4 address and not a true 
+        /*DON'T USE ::1 for ipv6. Doesn't work. Seems like it
+        binds to an ipv6 compatible ipv4 address and not a true
         ipv6 address so the socket doesn't send anything. */
         // let sock6 = Arc::new(
         //     UdpSocket::bind(SocketAddr::new(
@@ -652,7 +671,8 @@ mod tests {
         // );
         let sock6 = Arc::new(
             UdpSocket::bind(SocketAddr::new(
-                "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
+                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
                 0,
             ))
             .await
@@ -685,11 +705,11 @@ mod tests {
 
         /*jch */
         let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
-        let server_sock_addr6: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
+        // let server_sock_addr6: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         /*Pas derriere un nat */
-        let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
+        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
@@ -697,16 +717,16 @@ mod tests {
         {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr6),
-            );
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
                 action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
             );
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-            );
+            // Queue::lock_and_push(
+            //     Arc::clone(&action_queue),
+            //     action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
+            // );
+            // Queue::lock_and_push(
+            //     Arc::clone(&action_queue),
+            //     action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+            // );
             QueueState::set_non_empty_queue(action_queue_state.clone());
         }
         // let hash = [
@@ -723,14 +743,14 @@ mod tests {
                 }
                 Queue::lock_and_push(
                     Arc::clone(&action_queue),
-                    action::Action::SendRoot(None, sock_addr),
+                    action::Action::SendRoot(None, server_sock_addr4),
                 );
                 QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 process_queue_state.wait();
                 sleep(Duration::from_millis(100)).await;
                 let guard = active_peers.lock().unwrap();
                 /*If panics here, means the packet received had invalid hash (body length<32) */
-                match guard.addr_map.get(&sock_addr) {
+                match guard.addr_map.get(&server_sock_addr4) {
                     Some(peer) => break peer.get_root_hash(),
                     None => continue,
                 }
@@ -749,7 +769,7 @@ mod tests {
             Arc::clone(&maps),
             // yoan_hash,
             peer_hash,
-            sock_addr,
+            server_sock_addr4,
         );
         fetch1.await;
         // let fetch2 = fetch_subtree_from(
@@ -782,12 +802,18 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
     async fn register_and_fetch_file() {
-        let sock6 = Arc::new(
-            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
-                .await
-                .unwrap(),
-        );
+        env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
+        let sock6 = Arc::new(
+            UdpSocket::bind(SocketAddr::new(
+                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
+                0,
+            ))
+            .await
+            .unwrap(),
+        );
+
         let maps = build_tree_mutex();
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
@@ -812,74 +838,54 @@ mod tests {
         );
 
         /*jch */
-        let sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
-        // let sock_addr: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
-        /*yoan */
-        // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
-        /*Pas derriere un nat */
-        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
-        /*derriere un nat */
-        // let sock_addr: SocketAddr ="178.132.106.168:33313".parse().unwrap();
-        /*derriere un nat */
-        // let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
+        let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
         {
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
+                action::Action::SendHello(None, vec![97, 110, 105, 116], *&server_sock_addr4),
             );
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-            );
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendHello(None, vec![97, 110, 105, 116], *&sock_addr),
-            );
+            QueueState::set_non_empty_queue(action_queue_state.clone());
         }
-        sleep(Duration::from_secs(1)).await;
-        // let hash = [
-        //     211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
-        //     191, 123, 136, 76, 8, 147, 130, 48, 109, 255, 40, 26, 48,
-        // ];
-        let peer_hash = {
-            Queue::lock_and_push(
-                Arc::clone(&action_queue),
-                action::Action::SendRoot(None, sock_addr),
-            );
-            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-            process_queue_state.wait();
-            sleep(Duration::from_millis(100)).await;
-            let guard = active_peers.lock().unwrap();
-            let peer = guard.addr_map.get(&sock_addr).unwrap();
-            peer.get_root_hash().unwrap()
-        };
 
-        // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);
-        download_file(
+        let root_hash = <[u8; 32]>::try_from(
+            hex::decode("19629b381026ff80f9b72ff6ea1a06ce6942081fdfa251611a950c081cd99629")
+                .unwrap(),
+        )
+        .unwrap();
+
+        let file_hash = <[u8; 32]>::try_from(
+            hex::decode("4080d430508e6f1c68a19ee5f94466455a6ad430b24a864a4e4344135a88f5d2")
+                .unwrap(),
+        )
+        .unwrap();
+
+        fetch_subtree_from(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&maps),
             // yoan_hash,
-            peer_hash,
-            sock_addr,
+            root_hash,
+            server_sock_addr4,
         )
         .await;
 
-        // let child_hash: [u8; 32] = [
-        //     115, 50, 75, 0, 182, 12, 186, 29, 161, 254, 249, 93, 93, 212, 161, 125, 206, 44, 148,
-        //     135, 173, 127, 64, 161, 49, 67, 77, 10, 174, 213, 70, 250,
-        // ];
+        let file = download_file(
+            Arc::clone(&process_queue),
+            Arc::clone(&process_queue_readers_state),
+            Arc::clone(&action_queue),
+            Arc::clone(&action_queue_state),
+            Arc::clone(&maps),
+            file_hash,
+            server_sock_addr4,
+        )
+        .await;
 
-        // match maps.lock() {
-        //     Ok(m) => {
-        //         // println!("Name = {}", get_full_name(&child_hash, &m.2, &m.0));
-        //         println!("{:?}", get_name_to_hash_hashmap(&m.0, &m.2).keys());
-        //         // println!("Final hash to name {:?}", &m.2);
-        //     }
-        //     _ => (),
-        // };
+        match file {
+            Ok(f) => println!("Got file {f:?}"),
+            Err(e) => println!("Failed to get file"),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 100)]

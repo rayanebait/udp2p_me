@@ -20,3 +20,6 @@ tokio-util = { version = "0.7.10", features = ["full"] }
 thiserror = "1.0.51"
 async-recursion = "1.0.5"
 hex = "0.4.3"
+
+[dev-dependencies]
+env_logger = "0.10.1"
