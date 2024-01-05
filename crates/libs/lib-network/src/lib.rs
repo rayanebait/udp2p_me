@@ -736,7 +736,7 @@ mod tests {
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         /*Pas derriere un nat */
-        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
+        let server_sock_addr4: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
         let sock_addr: SocketAddr = "178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
