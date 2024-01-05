@@ -14,6 +14,28 @@ pub struct SimpleNode {
     pub data: Option<Vec<u8>>,
 }
 
+impl SimpleNode {
+    pub fn flatten(&self) -> Vec<u8> {
+        let mut data = Vec::<u8>::new();
+
+        match &self.data {
+            Some(d) => data.extend_from_slice(d),
+            None => (),
+        }
+
+        match &self.children {
+            Some(children) => {
+                for c in children.into_iter() {
+                    data.extend_from_slice(&c.flatten())
+                }
+            }
+            None => (),
+        }
+
+        return data;
+    }
+}
+
 pub fn build_tree_mutex() -> Arc<
     Mutex<(
         HashMap<[u8; 32], [u8; 32]>,

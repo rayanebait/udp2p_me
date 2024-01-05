@@ -28,7 +28,7 @@ pub fn receiver4(
                 }
             };
 
-            println!(
+            debug!(
                 "Received {} packet from {}\n",
                 packet.get_packet_type(),
                 sock_addr,
@@ -56,7 +56,7 @@ pub fn receiver6(
                 }
             };
 
-            println!(
+            debug!(
                 "Received {} packet from {} : {:?}\n",
                 packet.get_packet_type(),
                 sock_addr,
@@ -114,7 +114,7 @@ pub fn sender(
 
             match sent {
                 Ok(size) => {
-                    println!(
+                    debug!(
                         "Sending {} packet to {}\n",
                         packet.get_packet_type(),
                         sock_addr

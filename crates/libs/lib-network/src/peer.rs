@@ -153,7 +153,7 @@ impl ActivePeers {
         let peer_clone = peer.clone();
         let name = peer.get_name();
         match name {
-            Some(name)=>{
+            Some(name) => {
                 for addr in &peer.addresses {
                     self.addr_map.insert(*addr, name.clone());
                 }
@@ -161,7 +161,7 @@ impl ActivePeers {
             }
             None => {
                 debug!("Peer has no name");
-                return
+                return;
             }
         }
     }
@@ -170,7 +170,7 @@ impl ActivePeers {
             self.addr_map.remove(addr);
         }
     }
-    pub fn get(&self, sock_addr: SocketAddr)->Option<&Peer>{
+    pub fn get(&self, sock_addr: SocketAddr) -> Option<&Peer> {
         let peer_name = match self.addr_map.get(&sock_addr) {
             Some(name) => name,
             /*Ignore if peer doesn't exist */
@@ -179,7 +179,7 @@ impl ActivePeers {
 
         self.peer_map.get(peer_name)
     }
-    pub fn get_mut(&mut self, sock_addr: SocketAddr)->Option<&mut Peer>{
+    pub fn get_mut(&mut self, sock_addr: SocketAddr) -> Option<&mut Peer> {
         let peer_name = match self.addr_map.get(&sock_addr) {
             Some(name) => name,
             /*Ignore if peer doesn't exist */
@@ -230,11 +230,11 @@ impl ActivePeers {
         sock_addr: SocketAddr,
         extensions: Option<[u8; 4]>,
         name: Vec<u8>,
-    ) -> Result<(), PeerError>{
+    ) -> Result<(), PeerError> {
         /*Peers are identified by name */
         let name = match String::from_utf8(name) {
-            Ok(name)=> name,
-            Err(_)=> return Err(PeerError::InvalidUTF8Name),
+            Ok(name) => name,
+            Err(_) => return Err(PeerError::InvalidUTF8Name),
         };
 
         let mut active_peers = match active_peers.lock() {
@@ -250,12 +250,11 @@ impl ActivePeers {
                 /*Keep alive */
                 info!("EXIST");
                 if name != *stored_name {
-                    return Err(PeerError::NameChanged)
+                    return Err(PeerError::NameChanged);
                 }
-            },
+            }
             None => {
                 /*Create peer */
-                info!("CREATE");
                 let mut peer = Peer::new();
                 peer.add_address(sock_addr)
                     .set_name(name)
@@ -267,10 +266,9 @@ impl ActivePeers {
             }
         };
 
-        match active_peers.peer_map.get_mut(&name){
-            Some(peer)=> peer.set_timer(),
+        match active_peers.peer_map.get_mut(&name) {
+            Some(peer) => peer.set_timer(),
             None => return Err(PeerError::Unknown),
-
         };
         return Ok(());
     }
@@ -288,9 +286,9 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        let peer = match active_peers.get_mut(sock_addr){
-            Some(peer)=>peer,
-            None=> return Err(PeerError::UnknownPeer),
+        let peer = match active_peers.get_mut(sock_addr) {
+            Some(peer) => peer,
+            None => return Err(PeerError::UnknownPeer),
         };
         /*keep alive */
         match peer.has_timed_out(30000) {
@@ -324,9 +322,9 @@ impl ActivePeers {
                 panic!("Peers mutex is poisoned {e}")
             }
         };
-        let peer = match active_peers.get_mut(sock_addr){
-            Some(peer)=>peer,
-            None=> return Err(PeerError::UnknownPeer),
+        let peer = match active_peers.get_mut(sock_addr) {
+            Some(peer) => peer,
+            None => return Err(PeerError::UnknownPeer),
         };
 
         match peer.has_timed_out(30000) {
@@ -362,9 +360,9 @@ impl ActivePeers {
             }
         };
 
-        let peer = match active_peers.get_mut(sock_addr){
-            Some(peer)=>peer,
-            None=> return Err(PeerError::UnknownPeer),
+        let peer = match active_peers.get_mut(sock_addr) {
+            Some(peer) => peer,
+            None => return Err(PeerError::UnknownPeer),
         };
 
         match peer.has_timed_out(30000) {
