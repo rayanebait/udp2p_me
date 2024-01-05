@@ -85,7 +85,7 @@ enum Commands {
     },
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads=10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -350,8 +350,9 @@ async fn main() -> Result<()> {
             match downloaded_file {
                 Ok(f) => {
                     let content = f.flatten();
-                    match file.write_all(&content) {
-                        Ok(_) => println!("Download completed."),
+                    println!("Size of file {}", &content.len());
+                    match file.write(&content) {
+                        Ok(size) => println!("Download completed. Wrote {} bytes", size),
                         Err(e) => {
                             println!("Failed to save file {e}");
                             bail!("Failed to save file {e}")
