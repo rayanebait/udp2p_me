@@ -70,7 +70,12 @@ async fn main() -> Result<()> {
             let peers = discovery::get_peers_names(&client, &url).await?;
             println!("Available peers :");
             for (i, peer) in peers.iter().enumerate() {
-                let addr = discovery::get_peer_addresses(&client, &url, &peer).await?;
+                let mut addr: discovery::Peer;
+                match discovery::get_peer_addresses(&client, &url, &peer).await {
+                    Ok(a) => addr = a,
+                    Err(_) => continue,
+                }
+
                 let root = discovery::get_peer_root(&client, &url, peer).await?;
                 let key = discovery::get_peer_key(&client, &url, peer).await?;
                 println!("\n\u{1f4c7} {}", peer.green());
