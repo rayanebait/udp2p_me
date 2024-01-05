@@ -239,6 +239,21 @@ pub fn get_children(
     }
 }
 
+pub fn get_type(action: &Action) -> Result<u8, PeerError> {
+    match action {
+        Action::ProcessDatum(data, address) => {
+            match data.get(32) {
+                Some(d) => return Ok(d.to_owned()),
+                None => return (Err(PeerError::InvalidPacket)),
+            };
+        }
+        _ => {
+            warn!("Not the datum we are looking for");
+            return (Err(PeerError::InvalidPacket));
+        }
+    }
+}
+
 pub fn get_parent_to_child_hashmap(
     action: &Action,
     hashmap: &mut HashMap<[u8; 32], Vec<[u8; 32]>>,

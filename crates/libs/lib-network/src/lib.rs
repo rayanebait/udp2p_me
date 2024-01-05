@@ -11,6 +11,8 @@ pub mod store;
 pub mod task_launcher_canceller;
 
 pub mod import_export {
+    use std::pin::Pin;
+
     use {
         crate::{
             action::Action, congestion_handler::*, handle_packet::*, packet::*, peer::*, store::*,
@@ -255,7 +257,7 @@ pub mod import_export {
     }
 
     #[async_recursion::async_recursion]
-    pub async fn download_file(
+    pub async fn download_from(
         peek_process_queue: Arc<RwLock<Queue<Action>>>,
         process_queue_readers_state: Arc<QueueState>,
         action_queue: Arc<Mutex<Queue<Action>>>,
@@ -270,13 +272,10 @@ pub mod import_export {
         hash: [u8; 32],
         sock_addr: SocketAddr,
     ) -> Result<SimpleNode, PeerError> {
-        // To download a complete file :
-        // Step 1 : get the first datum from the desired hash
-        // Step 2 : If it is a chunk -> store it
-        //          if it is a tree -> get the list of children in order (parse the tree)
-        // Step 3 : Repeat for each children
+        let mut subtasks: Vec<Pin<Box<dyn Future<Output = Result<SimpleNode, PeerError>> + Send>>> =
+            vec![];
+        let children: Option<Vec<[u8; 32]>>;
 
-        // Step 1
         // Send a get datum with the first target hash
         Queue::lock_and_push(
             Arc::clone(&action_queue),
@@ -295,54 +294,171 @@ pub mod import_export {
         .await
         {
             Ok(datum_action) => {
-                // Step 2
-                let mut node = match get_children(&datum_action, Arc::clone(&maps)) {
-                    Ok(n) => n,
-                    Err(e) => {
-                        error!("Failed to download datum");
-                        return Err(PeerError::InvalidPacket);
-                    }
-                };
-                match node.children {
-                    Some(c) => {
-                        let mut subtasks = vec![];
-                        for n in c.into_iter() {
-                            subtasks.push(download_file(
-                                Arc::clone(&peek_process_queue),
-                                Arc::clone(&process_queue_readers_state),
-                                Arc::clone(&action_queue),
-                                Arc::clone(&action_queue_state),
-                                Arc::clone(&maps),
-                                n.hash,
-                                sock_addr,
-                            ));
+                // build the maps :
+                // - child -> parent
+                // - parent -> child
+                // - hash -> name
+                // and return the children if there are some
+                // - chunk -> no children
+                // - tree -> no children (fetching only the filesystem)
+                // - directory -> children
+                let data_type = get_type(&datum_action)?;
+                match data_type {
+                    0 | 1 => {
+                        info!("Selected hash is a file, downloading it");
+                        let mut node = match get_children(&datum_action, Arc::clone(&maps)) {
+                            Ok(n) => n,
+                            Err(e) => {
+                                error!("Failed to download datum");
+                                return Err(PeerError::InvalidPacket);
+                            }
+                        };
+                        match node.children {
+                            Some(c) => {
+                                let mut subtasks = vec![];
+                                for n in c.into_iter() {
+                                    subtasks.push(download_from(
+                                        Arc::clone(&peek_process_queue),
+                                        Arc::clone(&process_queue_readers_state),
+                                        Arc::clone(&action_queue),
+                                        Arc::clone(&action_queue_state),
+                                        Arc::clone(&maps),
+                                        n.hash,
+                                        sock_addr,
+                                    ));
+                                }
+                                let completed = join_all(subtasks).await;
+                                node.children = Some(
+                                    completed
+                                        .into_iter()
+                                        .filter_map(|n| match n {
+                                            Ok(r) => Some(r),
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to download child, file may be corrupted. {e}"
+                                                );
+                                                None
+                                            }
+                                        })
+                                        .collect::<Vec<SimpleNode>>(),
+                                );
+                            }
+                            None => (),
                         }
-                        let completed = join_all(subtasks).await;
-                        node.children = Some(
-                            completed
-                                .into_iter()
-                                .filter_map(|n| match n {
-                                    Ok(r) => Some(r),
-                                    Err(e) => {
-                                        warn!(
-                                            "Failed to download child, file may be corrupted. {e}"
-                                        );
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<SimpleNode>>(),
-                        );
                         return Ok(node);
                     }
-                    None => return Ok(node),
+                    2 => {
+                        info!("Selected hash is a directory. Fetching the file tree.");
+                        fetch_subtree_from(
+                            Arc::clone(&peek_process_queue),
+                            Arc::clone(&process_queue_readers_state),
+                            Arc::clone(&action_queue),
+                            Arc::clone(&action_queue_state),
+                            Arc::clone(&maps),
+                            hash,
+                            sock_addr,
+                        )
+                        .await;
+                        return Err(PeerError::FileIsDirectory);
+                    }
+                    _ => return Err(PeerError::InvalidPacket),
                 }
             }
-            Err(PeerError::ResponseTimeout) => {
-                return Err(PeerError::ResponseTimeout);
-            }
-            _ => todo!(),
+            Err(PeerError::NoDatum) => return Err(PeerError::NoDatum),
+            Err(PeerError::ResponseTimeout) => return Err(PeerError::ResponseTimeout),
+            Err(e) => return Err(PeerError::Unknown),
         };
     }
+
+    // #[async_recursion::async_recursion]
+    // pub async fn download_file(
+    //     peek_process_queue: Arc<RwLock<Queue<Action>>>,
+    //     process_queue_readers_state: Arc<QueueState>,
+    //     action_queue: Arc<Mutex<Queue<Action>>>,
+    //     action_queue_state: Arc<QueueState>,
+    //     maps: Arc<
+    //         Mutex<(
+    //             HashMap<[u8; 32], [u8; 32]>,
+    //             HashMap<[u8; 32], Vec<[u8; 32]>>,
+    //             HashMap<[u8; 32], String>,
+    //         )>,
+    //     >,
+    //     hash: [u8; 32],
+    //     sock_addr: SocketAddr,
+    // ) -> Result<SimpleNode, PeerError> {
+    //     // To download a complete file :
+    //     // Step 1 : get the first datum from the desired hash
+    //     // Step 2 : If it is a chunk -> store it
+    //     //          if it is a tree -> get the list of children in order (parse the tree)
+    //     // Step 3 : Repeat for each children
+
+    //     // Step 1
+    //     // Send a get datum with the first target hash
+    //     Queue::lock_and_push(
+    //         Arc::clone(&action_queue),
+    //         Action::SendGetDatumWithHash(*&hash, *&sock_addr),
+    //     );
+    //     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+
+    //     match peek_until_datum_with_hash_from(
+    //         Arc::clone(&peek_process_queue),
+    //         Arc::clone(&process_queue_readers_state),
+    //         Arc::clone(&action_queue),
+    //         Arc::clone(&action_queue_state),
+    //         *&hash,
+    //         *&sock_addr,
+    //     )
+    //     .await
+    //     {
+    //         Ok(datum_action) => {
+    //             // Step 2
+    //             let mut node = match get_children(&datum_action, Arc::clone(&maps)) {
+    //                 Ok(n) => n,
+    //                 Err(e) => {
+    //                     error!("Failed to download datum");
+    //                     return Err(PeerError::InvalidPacket);
+    //                 }
+    //             };
+    //             match node.children {
+    //                 Some(c) => {
+    //                     let mut subtasks = vec![];
+    //                     for n in c.into_iter() {
+    //                         subtasks.push(download_file(
+    //                             Arc::clone(&peek_process_queue),
+    //                             Arc::clone(&process_queue_readers_state),
+    //                             Arc::clone(&action_queue),
+    //                             Arc::clone(&action_queue_state),
+    //                             Arc::clone(&maps),
+    //                             n.hash,
+    //                             sock_addr,
+    //                         ));
+    //                     }
+    //                     let completed = join_all(subtasks).await;
+    //                     node.children = Some(
+    //                         completed
+    //                             .into_iter()
+    //                             .filter_map(|n| match n {
+    //                                 Ok(r) => Some(r),
+    //                                 Err(e) => {
+    //                                     warn!(
+    //                                         "Failed to download child, file may be corrupted. {e}"
+    //                                     );
+    //                                     None
+    //                                 }
+    //                             })
+    //                             .collect::<Vec<SimpleNode>>(),
+    //                     );
+    //                     return Ok(node);
+    //                 }
+    //                 None => return Ok(node),
+    //             }
+    //         }
+    //         Err(PeerError::ResponseTimeout) => {
+    //             return Err(PeerError::ResponseTimeout);
+    //         }
+    //         _ => todo!(),
+    //     };
+    // }
 
     pub async fn peek_until_datum_with_hash_from(
         peek_process_queue: Arc<RwLock<Queue<Action>>>,
@@ -787,7 +903,7 @@ mod tests {
         };
 
         // keep_alive_to_peer(Arc::clone(&action_queue), Arc::clone(&action_queue_state), *&sock_addr);
-        let fetch1 = fetch_subtree_from(
+        let fetch1 = download_from(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
@@ -899,7 +1015,7 @@ mod tests {
         )
         .unwrap();
 
-        fetch_subtree_from(
+        let file = download_from(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_readers_state),
             Arc::clone(&action_queue),
@@ -911,16 +1027,16 @@ mod tests {
         )
         .await;
 
-        let file = download_file(
-            Arc::clone(&process_queue),
-            Arc::clone(&process_queue_readers_state),
-            Arc::clone(&action_queue),
-            Arc::clone(&action_queue_state),
-            Arc::clone(&maps),
-            file_hash,
-            server_sock_addr4,
-        )
-        .await;
+        // let file = download_file(
+        //     Arc::clone(&process_queue),
+        //     Arc::clone(&process_queue_readers_state),
+        //     Arc::clone(&action_queue),
+        //     Arc::clone(&action_queue_state),
+        //     Arc::clone(&maps),
+        //     file_hash,
+        //     server_sock_addr4,
+        // )
+        // .await;
 
         match file {
             Ok(f) => println!("Got file {f:?}"),

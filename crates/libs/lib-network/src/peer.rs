@@ -37,6 +37,8 @@ pub enum PeerError {
     InvalidUTF8Name,
     #[error("Name changed")]
     NameChanged,
+    #[error("File is directory")]
+    FileIsDirectory,
 }
 
 #[derive(Default, Debug, Clone)]
