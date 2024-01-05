@@ -6,10 +6,12 @@ use lib_web::discovery::Peer;
 use crate::{action::Action, peer::PeerError};
 use std::sync::{Arc, Mutex, PoisonError};
 
+#[derive(Debug)]
 pub struct SimpleNode {
-    hash: [u8; 32],
-    children: Option<Vec<SimpleNode>>,
-    data: Option<Vec<u8>>,
+    pub name: String,
+    pub hash: [u8; 32],
+    pub children: Option<Vec<SimpleNode>>,
+    pub data: Option<Vec<u8>>,
 }
 
 pub fn build_tree_mutex() -> Arc<
@@ -134,7 +136,7 @@ pub fn get_children(
             HashMap<[u8; 32], String>,
         )>,
     >,
-) -> Result<(), PeerError> {
+) -> Result<SimpleNode, PeerError> {
     match action {
         Action::ProcessDatum(data, address) => {
             let data_type = match data.get(32) {
@@ -147,23 +149,30 @@ pub fn get_children(
                 None => return (Err(PeerError::InvalidPacket)),
             };
             hash.copy_from_slice(temp);
+            let name = match maps.lock() {
+                Ok(m) => match m.2.get(&hash) {
+                    Some(n) => n.to_string(),
+                    None => "/".to_string(),
+                },
+                Err(e) => {
+                    error!("Could not lock hash to name map because of {e}");
+                    panic!("Failed")
+                }
+            };
             match data_type {
                 0 => {
-                    let name = match maps.lock() {
-                        Ok(m) => match m.2.get(&hash) {
-                            Some(n) => n.to_string(),
-                            None => "/tmp/dump".to_string(),
-                        },
-                        Err(e) => {
-                            error!("Could not lock hash to name map because of {e}");
-                            panic!("Failed")
-                        }
-                    };
                     let data = match data.get(33..) {
                         Some(d) => d,
                         None => return (Err(PeerError::InvalidPacket)),
                     };
-                    println!("Data [{name}] : {data:?}");
+                    let node = SimpleNode {
+                        name: name,
+                        hash: hash,
+                        children: None,
+                        data: Some(data.to_vec()),
+                    };
+                    println!("Node : {node:?}");
+                    return Ok(node);
                 }
                 1 => {
                     let data = match data.get(33..) {
@@ -171,13 +180,32 @@ pub fn get_children(
                         None => return (Err(PeerError::InvalidPacket)),
                     };
                     let leaves = data.chunks(32).map(|s| s.to_owned());
-                    for (i, leaf) in leaves.enumerate() {
-                        let mut leaf_slice = [0u8; 32];
-                        leaf_slice.copy_from_slice(&leaf);
-                        println!("[{i}] {leaf_slice:?}");
-                    }
+                    let children: Vec<SimpleNode> = leaves
+                        .into_iter()
+                        .map(|l| {
+                            let mut leaf_slice = [0u8; 32];
+                            leaf_slice.copy_from_slice(&l);
+                            SimpleNode {
+                                name: name.clone(),
+                                hash: leaf_slice,
+                                children: None,
+                                data: None,
+                            }
+                        })
+                        .collect();
+                    let node = SimpleNode {
+                        name: name,
+                        hash: hash,
+                        children: Some(children),
+                        data: None,
+                    };
+                    return Ok(node);
                 }
-                2 => {}
+                2 => {
+                    warn!("Found a directory, not a valid file.");
+                    println!("Not a valid file.");
+                    return (Err(PeerError::InvalidPacket));
+                }
                 _ => {
                     warn!("Not a mkfs node");
                     return (Err(PeerError::InvalidPacket));
@@ -189,7 +217,6 @@ pub fn get_children(
             return (Err(PeerError::InvalidPacket));
         }
     }
-    return Ok(());
 }
 
 pub fn get_parent_to_child_hashmap(

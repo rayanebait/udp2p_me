@@ -107,6 +107,11 @@ pub fn sender(
                     continue;
                 }
             };
+            debug!(
+                "Sending {} packet to {}\n",
+                packet.get_packet_type(),
+                sock_addr
+            );
 
             PendingIds::lock_and_add_id(Arc::clone(&pending_ids_to_add), &packet, &sock_addr);
             let sent = match sock_addr {
@@ -123,7 +128,7 @@ pub fn sender(
                     );
                 }
                 Err(e) => {
-                    println!(
+                    error!(
                         "error socket: {}, socketaddr: {}",
                         sock6.local_addr().unwrap().is_ipv6(),
                         sock_addr.is_ipv6()
