@@ -285,6 +285,7 @@ pub mod import_export {
             Arc::clone(&action_queue),
             Action::SendGetDatumWithHash(*&hash, *&sock_addr),
         );
+        // Set this every time ?
         QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
 
         match peek_until_datum_with_hash_from(
@@ -326,6 +327,7 @@ pub mod import_export {
                             completed
                                 .into_iter()
                                 .filter_map(|n| {
+                                    // println!("Node {:?}", &n);
                                     // println!("Node {:?}", &n);
                                     match n {
                                         Ok(r) => Some(r),
@@ -847,9 +849,13 @@ mod tests {
         //     .unwrap(),
         // );
         let sock6 = Arc::new(
-            UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0))
-                .await
-                .unwrap(),
+            UdpSocket::bind(SocketAddr::new(
+                "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
+                // "2001:861:36c2:cdf0:4572:dd2e:473a:4081".parse().unwrap(),
+                0,
+            ))
+            .await
+            .unwrap(),
         );
 
         let maps = build_tree_mutex();
