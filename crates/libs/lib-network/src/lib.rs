@@ -685,7 +685,7 @@ mod tests {
 
     /*Currently seems to sometime not be able to register peer.
     Sometimes when receiving helloreply, doesn't even attempt to create peer.  */
-    #[tokio::test(flavor = "multi_thread", worker_threads = 100)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn register_and_fetch_tree() {
         env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
@@ -736,9 +736,9 @@ mod tests {
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
         /*Pas derriere un nat */
-        // let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
+        let sock_addr: SocketAddr = "82.66.83.225:8000".parse().unwrap();
         /*derriere un nat */
-        let sock_addr: SocketAddr = "178.132.106.168:33313".parse().unwrap();
+        // let sock_addr: SocketAddr = "178.132.106.168:33313".parse().unwrap();
         /*derriere un nat */
         // let sock_addr: SocketAddr = "81.65.148.210:40214".parse().unwrap();
         handshake(
@@ -826,7 +826,7 @@ mod tests {
         };
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1000)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
     async fn register_and_fetch_file() {
         // env_logger::init();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
