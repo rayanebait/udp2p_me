@@ -818,7 +818,7 @@ mod tests {
             process_queue_readers_state.clone(),
             action_queue.clone(),
             action_queue_state.clone(),
-            server_sock_addr4,
+            _server_sock_addr4,
         );
         handshake(
             process_queue.clone(),
@@ -841,14 +841,14 @@ mod tests {
                 }
                 Queue::lock_and_push(
                     Arc::clone(&action_queue),
-                    action::Action::SendRoot(None, server_sock_addr4),
+                    action::Action::SendRoot(None, _server_sock_addr4),
                 );
                 QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 process_queue_state.wait();
                 sleep(Duration::from_millis(100)).await;
                 let guard = active_peers.lock().unwrap();
                 /*If panics here, means the packet received had invalid hash (body length<32) */
-                match guard.get(*&server_sock_addr4) {
+                match guard.get(*&_server_sock_addr4) {
                     Some(peer) => break peer.get_root_hash(),
                     None => continue,
                 }
@@ -867,7 +867,7 @@ mod tests {
             Arc::clone(&maps),
             // yoan_hash,
             peer_hash,
-            server_sock_addr4,
+            _server_sock_addr4,
         );
         let _ = fetch1.await;
         // let fetch2 = fetch_subtree_from(
