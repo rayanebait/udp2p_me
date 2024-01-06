@@ -154,9 +154,9 @@ async fn main() -> Result<()> {
                 action_queue,
                 process_queue,
                 _pending_ids,
-                receive_queue_state,
+                _receive_queue_state,
                 action_queue_state,
-                send_queue_state,
+                _send_queue_state,
                 process_queue_state,
                 process_queue_readers_state,
             ) = (
@@ -375,7 +375,6 @@ async fn main() -> Result<()> {
                     bail!("Download failed with error {e}")
                 }
             }
-
         }
     }
     std::process::exit(0);
