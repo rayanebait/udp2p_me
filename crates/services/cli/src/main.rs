@@ -386,6 +386,6 @@ async fn main() -> Result<()> {
             task_canceller(cancel.clone());
         }
     }
-
-    return Ok(());
+    std::process::exit(0);
+    // return Ok(());
 }
