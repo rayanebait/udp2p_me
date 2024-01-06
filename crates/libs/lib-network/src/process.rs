@@ -116,7 +116,7 @@ pub fn process_action(
         }
         Action::ProcessError(id, error_msg, sock_addr) => {
             /*DONE */
-            debug!(
+            info!(
                 "Received Error with body: {}\n from {}\n",
                 String::from_utf8(error_msg).unwrap(),
                 sock_addr
@@ -206,8 +206,8 @@ pub fn process_action(
         }
         Action::ProcessErrorReply(err_msg_reply, sock_addr) => {
             /*DONE */
-            debug!(
-                "Received ErrorReply packet with message:{}\n From {}\n",
+            info!(
+                "Received ErrorReply with body:{}\n from {}\n",
                 String::from_utf8_lossy(&err_msg_reply),
                 sock_addr
             );

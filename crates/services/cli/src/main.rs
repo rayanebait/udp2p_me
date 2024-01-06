@@ -85,7 +85,7 @@ enum Commands {
     },
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 15)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -184,6 +184,7 @@ async fn main() -> Result<()> {
             my_data.set_name("nist".to_string());
             let my_data = Arc::new(my_data);
 
+
             task_launcher(
                 queues,
                 active_peers.clone(),
@@ -192,7 +193,15 @@ async fn main() -> Result<()> {
                 sock6.clone(),
             );
 
-            /*jch */
+            let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+            handshake(
+                process_queue.clone(),
+                process_queue_readers_state.clone(),
+                action_queue.clone(),
+                action_queue_state.clone(),
+                server_sock_addr4,
+            );
+
             let sock_addr: SocketAddr = peer.parse().unwrap();
             {
                 Queue::lock_and_push(

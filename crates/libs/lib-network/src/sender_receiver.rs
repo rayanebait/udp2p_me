@@ -121,11 +121,6 @@ pub fn sender(
                     );
                 }
                 Err(e) => {
-                    error!(
-                        "error socket: {}, socketaddr: {}",
-                        sock6.local_addr().unwrap().is_ipv6(),
-                        sock_addr.is_ipv6()
-                    );
                     error!("{}", e)
                 }
             }
