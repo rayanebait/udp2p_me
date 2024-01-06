@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hex;
 use lib_network::{
-    action::*, congestion_handler::*, import_export::*, peer::*, store::*,
+    action::*, congestion_handler::*, import_export::{handshake, download_from}, peer::*, store::*,
     task_launcher_canceller::*,
 };
 use lib_web::discovery;
