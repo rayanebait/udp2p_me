@@ -1,4 +1,4 @@
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -7,7 +7,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::store;
+
 
 #[derive(Error, Debug)]
 pub enum PeerError {
@@ -194,7 +194,7 @@ impl ActivePeers {
         active_peers: Arc<Mutex<ActivePeers>>,
         sock_addr: SocketAddr,
     ) -> Option<String> {
-        let mut active_peers = match active_peers.lock() {
+        let active_peers = match active_peers.lock() {
             Ok(active_peers) => active_peers,
             Err(e) => {
                 error!("[lock_and_get] Peers mutex is poisoned {e}");

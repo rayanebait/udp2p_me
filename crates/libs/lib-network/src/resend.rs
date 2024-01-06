@@ -1,15 +1,13 @@
-use tokio_util::time::DelayQueue;
+
 
 use crate::{
-    action::Action,
-    congestion_handler::{self, PendingIds, Queue, QueueState},
-    import_export::keep_alive_to_peer,
+    congestion_handler::{PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
     peer::ActivePeers,
 };
 use std::{
     net::SocketAddr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     thread::sleep,
     time::Duration,
 };
@@ -17,7 +15,7 @@ use std::{
 /*Remark: Packets/ids are popped only when received. */
 pub fn resend_task(
     pending_ids: Arc<Mutex<PendingIds>>,
-    peek_active_peers: Arc<Mutex<ActivePeers>>,
+    _peek_active_peers: Arc<Mutex<ActivePeers>>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
 ) {

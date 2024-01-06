@@ -1,11 +1,11 @@
-use sha2::{Digest, Sha256};
-use std::net::SocketAddr;
-use std::str::Bytes;
-use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock};
 
-use futures::future::pending;
-use log::{debug, error, info, warn};
-use tokio_util::bytes::Buf;
+use std::net::SocketAddr;
+
+use std::sync::{Arc, Mutex, RwLock};
+
+
+use log::{debug, error};
+
 
 use crate::action::*;
 use crate::congestion_handler::*;
@@ -84,7 +84,7 @@ pub fn handle_packet(
 
     match id_exists {
         /*Packet is a response, handles the case where packet is a nat traversal */
-        Ok(sock_addr) => {
+        Ok(_sock_addr) => {
             if packet.is_response() {
                 handle_response_packet(packet, socket_addr, pending_ids)
             } else {
@@ -121,7 +121,7 @@ pub fn handle_packet(
 fn handle_request_packet(
     packet: Packet,
     socket_addr: SocketAddr,
-    pending_ids: Arc<Mutex<PendingIds>>, //should add self_info with public key root, etc..
+    _pending_ids: Arc<Mutex<PendingIds>>, //should add self_info with public key root, etc..
 ) -> Result<Action, HandlingError> {
     let id = packet.get_id();
     let body = packet.get_body();
@@ -210,7 +210,7 @@ fn handle_request_packet(
 fn handle_response_packet(
     packet: Packet,
     socket_addr: SocketAddr,
-    pending: Arc<Mutex<PendingIds>>,
+    _pending: Arc<Mutex<PendingIds>>,
 ) -> Result<Action, HandlingError> {
     let body = packet.get_body();
     match packet.get_packet_type() {

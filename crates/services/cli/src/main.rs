@@ -2,17 +2,17 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hex;
 use lib_network::{
-    action::*, congestion_handler::*, import_export::*, packet::*, peer::*, store::*,
+    action::*, congestion_handler::*, import_export::*, peer::*, store::*,
     task_launcher_canceller::*,
 };
 use lib_web::discovery;
-use log::{debug, error, info, warn};
+use log::{error, info};
 use owo_colors::OwoColorize;
 use std::{
     fs::File,
     io::Write,
     net::SocketAddr,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, MutexGuard},
     time::Duration,
 };
 use tokio::{self, net::UdpSocket, time::sleep};
@@ -37,13 +37,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Fetch the available peers.
-    FetchPeers {
+    Peers {
         /// Url of peers page
         #[arg(short = 'u', long)]
         host: String,
     },
     /// Download a file from a hash
-    DownloadFrom {
+    Download {
         /// Address of the peer
         #[arg(short, long)]
         peer: String,
@@ -63,14 +63,14 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::FetchPeers { host } => {
+        Commands::Peers { host } => {
             info!("Fetching peers from central server {}.", host);
             let client = discovery::get_client(5)?;
             let url = discovery::parse_url(host)?;
             let peers = discovery::get_peers_names(&client, &url).await?;
             println!("Available peers :");
-            for (i, peer) in peers.iter().enumerate() {
-                let mut addr: discovery::Peer;
+            for (_i, peer) in peers.iter().enumerate() {
+                let addr: discovery::Peer;
                 match discovery::get_peer_addresses(&client, &url, &peer).await {
                     Ok(a) => addr = a,
                     Err(_) => continue,
@@ -93,25 +93,24 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::DownloadFrom {
+        Commands::Download {
             peer,
             datum,
             output,
         } => {
-            let mut peer_hash: Option<[u8; 32]> = match datum {
+            let peer_hash: Option<[u8; 32]> = match datum {
                 Some(d) => {
                     info!("Fetching content from peer {} for hash {}.", peer, d);
                     println!("Fetching content from peer {} for hash {}.", peer, d);
                     match hex::decode(d) {
                         Ok(h) => match <[u8; 32]>::try_from(h) {
                             Ok(i) => Some(i),
-                            Err(e) => {
+                            Err(_e) => {
                                 error!("Invalid root hash. Please check your input.");
                                 bail!("Invalid root hash. Please check your input.");
-                                None
                             }
                         },
-                        Err(e) => {
+                        Err(_e) => {
                             error!("Failed to decode root hash. Please check your input.");
                             bail!("Failed to decode root hash. Please check your input.")
                         }
@@ -125,7 +124,7 @@ async fn main() -> Result<()> {
             };
 
             let addr4 = UdpSocket::bind("0.0.0.0:0").await;
-            let mut sock4: Arc<UdpSocket>;
+            let sock4: Arc<UdpSocket>;
             match addr4 {
                 Ok(a) => sock4 = Arc::new(a),
                 Err(e) => {
@@ -134,7 +133,7 @@ async fn main() -> Result<()> {
                 }
             }
             let addr6 = UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000)).await;
-            let mut sock6: Arc<UdpSocket>;
+            let sock6: Arc<UdpSocket>;
             match addr6 {
                 Ok(a) => sock6 = Arc::new(a),
                 Err(e) => {
@@ -146,7 +145,7 @@ async fn main() -> Result<()> {
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
 
-            let receive_queue_state = Arc::clone(&queues.5);
+            let _receive_queue_state = Arc::clone(&queues.5);
             let action_queue = Arc::clone(&queues.2);
             let action_queue_state = Arc::clone(&queues.6);
             let process_queue = Arc::clone(&queues.3);
@@ -165,7 +164,7 @@ async fn main() -> Result<()> {
                 sock6.clone(),
             );
 
-            let mut sock_addr: SocketAddr;
+            let sock_addr: SocketAddr;
             match peer.parse() {
                 Ok(s) => sock_addr = s,
                 Err(e) => {
@@ -175,6 +174,7 @@ async fn main() -> Result<()> {
             }
             info!("Contacting address {}", sock_addr.to_string());
 
+            // Make handshake blocking
             handshake(
                 process_queue.clone(),
                 process_queue_readers_state.clone(),
@@ -182,6 +182,8 @@ async fn main() -> Result<()> {
                 action_queue_state.clone(),
                 sock_addr,
             );
+
+            sleep(Duration::from_millis(500)).await;
 
             let peer_hash = match peer_hash {
                 Some(h) => h,
@@ -201,7 +203,7 @@ async fn main() -> Result<()> {
                             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                             process_queue_state.wait();
                             sleep(Duration::from_millis(100)).await;
-                            let mut guard: MutexGuard<'_, ActivePeers>;
+                            let guard: MutexGuard<'_, ActivePeers>;
                             match active_peers.lock() {
                                 Ok(l) => guard = l,
                                 Err(e) => {
@@ -290,7 +292,7 @@ async fn main() -> Result<()> {
                                 if step > 0 {
                                     step -= 1;
                                 }
-                                let mut carry = str::repeat("   ", step);
+                                let carry = str::repeat("   ", step);
                                 println!("{carry}└──\u{1f4c4} {n}");
                                 println!(
                                     "   {carry} {}",
@@ -313,9 +315,6 @@ async fn main() -> Result<()> {
                     bail!("Download failed with error {e}")
                 }
             }
-        }
-        _ => {
-            error!("No subcommand");
         }
     }
     return Ok(());

@@ -1,5 +1,5 @@
 use prelude::*;
-use std::{default, fmt::Display};
+use std::fmt::Display;
 
 // use crate::peer_data::*;
 
@@ -9,7 +9,7 @@ use nanorand::{wyrand::WyRand, BufferedRng, Rng};
 use sha2::{Digest, Sha256};
 /*Utilities */
 use anyhow::Result;
-use hex::decode;
+
 /*Async/net libraries */
 use std::net::{IpAddr, SocketAddr};
 use tokio::net::UdpSocket;
@@ -482,7 +482,7 @@ impl Packet {
             return Err(PacketError::InvalidFormatError);
         }
 
-        let mut body: Vec<u8>;
+        let body: Vec<u8>;
         if length == 0 {
             body = vec![];
         } else {
@@ -491,7 +491,7 @@ impl Packet {
         copied += length;
         len -= length;
 
-        let mut signature: Option<[u8; 64]>;
+        let signature: Option<[u8; 64]>;
         if len == 0 {
             signature = None;
         } else if len < 64 {
@@ -527,12 +527,15 @@ impl Packet {
         sock: &UdpSocket,
         addr: &SocketAddr,
     ) -> Result<usize, PacketError> {
-        sock.writable().await;
-        let res = sock.try_send_to(self.as_bytes().as_slice(), addr.clone());
-
-        match res {
-            Ok(size) => return Ok(size),
-            Err(e) => return Err(PacketError::UnknownError),
+        match sock.writable().await {
+            Ok(_) => {
+                let res = sock.try_send_to(self.as_bytes().as_slice(), addr.clone());
+                match res {
+                    Ok(size) => return Ok(size),
+                    Err(_e) => return Err(PacketError::UnknownError),
+                }
+            }
+            Err(_) => return Err(PacketError::UnknownError),
         }
     }
 
