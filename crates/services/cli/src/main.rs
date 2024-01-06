@@ -4,9 +4,7 @@ use hex;
 use lib_network::{
     action::*,
     congestion_handler::*,
-    import_export::{
-        download_from, handshake, keep_alive_to_peer, peek_until_root_reply_from, register,
-    },
+    import_export::{download_from, handshake, peek_until_root_reply_from},
     peer::*,
     store::*,
     task_launcher_canceller::*,
@@ -142,6 +140,7 @@ async fn main() -> Result<()> {
                 }
             }
 
+            let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
             let maps = build_tree_mutex();
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
@@ -191,23 +190,14 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Make handshake blocking
-            match register(
+            handshake(
                 process_queue.clone(),
-                process_queue_state.clone(),
                 process_queue_readers_state.clone(),
                 action_queue.clone(),
                 action_queue_state.clone(),
+                server_sock_addr4,
                 my_data.clone(),
-            )
-            .await
-            {
-                Ok(_) => (),
-                Err(e) => {
-                    error!("{e}");
-                    return Ok(());
-                }
-            };
+            );
 
             info!("Contacting address {}", sock_addr.to_string());
 
@@ -236,49 +226,15 @@ async fn main() -> Result<()> {
                     Ok(Action::ProcessRootReply(hash, _)) => hash,
                     Err(PeerError::ResponseTimeout) => bail!("Couldn't fetch peer root"),
                     _ => bail!("Unexpected error"),
-                    // let mut attempt = 0;
-                    // loop {
-                    //     if attempt < 4 {
-                    //         attempt += 1;
-                    //     } else {
-                    //         break None;
-                    //     }
-                    //     Queue::lock_and_push(
-                    //         Arc::clone(&action_queue),
-                    //         Action::SendRoot(None, sock_addr),
-                    //     );
-                    //     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-                    //     process_queue_state.wait();
-                    //     sleep(Duration::from_millis(100)).await;
-                    //     let guard: MutexGuard<'_, ActivePeers>;
-                    //     match active_peers.lock() {
-                    //         Ok(l) => guard = l,
-                    //         Err(e) => {
-                    //             error!("Failed to aquire active peers {e}");
-                    //             bail!("Failed to aquire active peers {e}")
-                    //         }
-                    //     }
-                    //     match guard.get(sock_addr) {
-                    //         Some(peer) => break peer.get_root_hash(),
-                    //         None => continue,
-                    //     }
-                    // }
                 },
             };
-            keep_alive_to_peer(
-                action_queue.clone(),
-                action_queue_state.clone(),
-                sock_addr,
-                my_data.clone(),
-                30000000000,
-            );
 
             let peer_hash = match peer_hash {
                 Some(h) => h,
                 None => {
                     println!("{}", "Peer is not exporting any file.".red());
                     error!("{}", "Peer is not exporting any file.".red());
-                    bail!("Peer is not exporting any file.");
+                    std::process::exit(0);
                 }
             };
 
@@ -292,6 +248,7 @@ async fn main() -> Result<()> {
                 Arc::clone(&maps),
                 peer_hash,
                 sock_addr,
+                10000,
             )
             .await;
 
@@ -320,7 +277,7 @@ async fn main() -> Result<()> {
                         Ok(f) => f,
                         Err(e) => {
                             error!("Could not create or open file {} : {}", &path, e);
-                            bail!("Could not create or open file {} : {}", &path, e)
+                            std::process::exit(0);
                         }
                     };
 
@@ -331,7 +288,7 @@ async fn main() -> Result<()> {
                         Err(e) => {
                             println!("Failed to save file {e}");
                             error!("Failed to save file {e}");
-                            bail!("Failed to save file {e}")
+                            std::process::exit(0);
                         }
                     }
                 }
@@ -361,13 +318,14 @@ async fn main() -> Result<()> {
                         }
                         Err(e) => {
                             error!("[Code 32] Download failed with error {e}");
-                            bail!("Download failed with error {e}")
+                            std::process::exit(0);
+                            // bail!("Download failed with error {e}")
                         }
                     };
                 }
                 Err(e) => {
                     error!("[Code 33] Download failed with error {e}");
-                    bail!("Download failed with error {e}")
+                    std::process::exit(0);
                 }
             }
         }

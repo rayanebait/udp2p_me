@@ -123,8 +123,11 @@ pub fn task_launcher(
         resend_task(
             pending_ids.clone(),
             active_peers.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
             send_queue.clone(),
             send_queue_state.clone(),
+            my_data.clone()
         );
 
     });

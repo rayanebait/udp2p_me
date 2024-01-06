@@ -13,8 +13,6 @@ pub mod task_launcher_canceller;
 pub mod import_export {
     use std::pin::Pin;
 
-
-
     use {
         crate::{action::Action, congestion_handler::*, peer::*, store::*},
         futures::{future::join_all, Future},
@@ -25,7 +23,6 @@ pub mod import_export {
             /*Multi task*/
             sync::{Arc, Mutex, RwLock},
         },
-        tokio::time::timeout,
     };
 
     /*Sends Hello then peeks the process queue to check for a helloreply, if no
@@ -39,10 +36,17 @@ pub mod import_export {
         action_queue: Arc<Mutex<Queue<Action>>>,
         action_queue_state: Arc<QueueState>,
         my_data: Arc<Peer>,
-    ) -> Result<(), PeerError>{
+    ) -> Result<(), PeerError> {
         let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
 
-        handshake(peek_process_queue.clone(), process_queue_readers_state.clone(), action_queue.clone(), action_queue_state.clone(), server_sock_addr, my_data.clone());
+        handshake(
+            peek_process_queue.clone(),
+            process_queue_readers_state.clone(),
+            action_queue.clone(),
+            action_queue_state.clone(),
+            server_sock_addr,
+            my_data.clone(),
+        );
 
         match peek_until_hello_reply_from(
             Arc::clone(&peek_process_queue),
@@ -51,7 +55,7 @@ pub mod import_export {
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             server_sock_addr,
-            10000,
+            1000,
         )
         .await
         {
@@ -64,11 +68,11 @@ pub mod import_export {
                     30_000_000_000,
                 );
                 debug!("Register OK");
-                return Ok(())
+                return Ok(());
             }
-            Err(_) =>{
+            Err(_) => {
                 debug!("Register failed");
-                 return Err(PeerError::ResponseTimeout)
+                return Err(PeerError::ResponseTimeout);
             }
         };
     }
@@ -123,34 +127,31 @@ pub mod import_export {
         _action_queue: Arc<Mutex<Queue<Action>>>,
         _action_queue_state: Arc<QueueState>,
         sock_addr: SocketAddr,
-        timer: u64,
+        timeout: u64,
     ) -> Result<Action, PeerError> {
-        let action_or_timeout = timeout(Duration::from_millis(timer), async {
-            loop {
-                /*Wait notify all from receive task */
-                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
-                    Some(front) => front,
-                    None => {
-                        process_queue_readers_state.wait();
+        loop {
+            /*Wait notify all from receive task */
+            let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                Some(front) => front,
+                None => {
+                    QueueState::set_empty_queue(process_queue_readers_state.clone());
+                    match process_queue_readers_state.wait_timeout_ms(timeout) {
+                        Ok(_) => (),
+                        Err(_) => return Err(PeerError::PeerTimedOut),
+                    };
+                    continue;
+                }
+            };
+            match front {
+                Action::ProcessRootReply(_hash, addr) => {
+                    if addr == sock_addr {
+                        break Ok::<Action, PeerError>(front);
+                    } else {
                         continue;
                     }
-                };
-                match front {
-                    Action::ProcessRootReply(_hash, addr) => {
-                        if addr == sock_addr {
-                            break Ok::<Action, PeerError>(front);
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
                 }
+                _ => continue,
             }
-        });
-
-        match action_or_timeout.await {
-            Ok(result) => result,
-            Err(_e) => Err(PeerError::ResponseTimeout),
         }
     }
     pub async fn peek_until_hello_reply_from(
@@ -160,34 +161,31 @@ pub mod import_export {
         _action_queue: Arc<Mutex<Queue<Action>>>,
         _action_queue_state: Arc<QueueState>,
         sock_addr: SocketAddr,
-        timer: u64,
+        timeout: u64,
     ) -> Result<Action, PeerError> {
-        let action_or_timeout = timeout(Duration::from_millis(timer), async {
-            loop {
-                /*Wait notify all from receive task */
-                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
-                    Some(front) => front,
-                    None => {
-                        process_queue_readers_state.wait();
+        loop {
+            /*Wait notify all from receive task */
+            let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                Some(front) => front,
+                None => {
+                    QueueState::set_empty_queue(process_queue_readers_state.clone());
+                    match process_queue_readers_state.wait_timeout_ms(timeout) {
+                        Ok(_) => (),
+                        Err(_) => return Err(PeerError::PeerTimedOut),
+                    };
+                    continue;
+                }
+            };
+            match front {
+                Action::ProcessHelloReply(.., addr) => {
+                    if addr == sock_addr {
+                        break Ok::<Action, PeerError>(front);
+                    } else {
                         continue;
                     }
-                };
-                match front {
-                    Action::ProcessHelloReply(.., addr) => {
-                        if addr == sock_addr {
-                            break Ok::<Action, PeerError>(front);
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
                 }
+                _ => continue,
             }
-        });
-
-        match action_or_timeout.await {
-            Ok(result) => result,
-            Err(_e) => Err(PeerError::ResponseTimeout),
         }
     }
 
@@ -206,6 +204,7 @@ pub mod import_export {
         >,
         hash: [u8; 32],
         sock_addr: SocketAddr,
+        timeout: u64,
     ) -> Result<(), PeerError> {
         let mut subtasks = vec![];
         let children: Option<Vec<[u8; 32]>>;
@@ -224,6 +223,7 @@ pub mod import_export {
             Arc::clone(&action_queue_state),
             *&hash,
             *&sock_addr,
+            timeout,
         )
         .await
         {
@@ -253,7 +253,8 @@ pub mod import_export {
                 return Err(PeerError::ResponseTimeout);
                 // break Err::<Action, PeerError>(PeerError::ResponseTimeout)
             }
-            _ => todo!(),
+            Err(PeerError::PeerTimedOut)=> return Err(PeerError::PeerTimedOut),
+            _=> return Err(PeerError::Unknown),
         };
         match children {
             Some(childs) => {
@@ -268,6 +269,7 @@ pub mod import_export {
                         Arc::clone(&maps),
                         child_hash,
                         sock_addr,
+                        timeout,
                     ));
                     // hash_vec.push(Action::SendGetDatumWithHash(child_hash, sock_addr));
                 }
@@ -305,6 +307,7 @@ pub mod import_export {
         >,
         hash: [u8; 32],
         sock_addr: SocketAddr,
+        timeout: u64,
     ) -> Result<SimpleNode, PeerError> {
         let _subtasks: Vec<Pin<Box<dyn Future<Output = Result<SimpleNode, PeerError>> + Send>>> =
             vec![];
@@ -324,6 +327,7 @@ pub mod import_export {
             Arc::clone(&action_queue_state),
             *&hash,
             *&sock_addr,
+            timeout,
         )
         .await
         {
@@ -359,6 +363,7 @@ pub mod import_export {
                                         Arc::clone(&maps),
                                         n.hash,
                                         sock_addr,
+                                        timeout,
                                     ));
                                 }
                                 let completed = join_all(subtasks).await;
@@ -391,6 +396,7 @@ pub mod import_export {
                             Arc::clone(&maps),
                             hash,
                             sock_addr,
+                            timeout,
                         )
                         .await?;
                         return Err(PeerError::FileIsDirectory);
@@ -411,39 +417,37 @@ pub mod import_export {
         _action_queue_state: Arc<QueueState>,
         hash: [u8; 32],
         sock_addr: SocketAddr,
+        timeout: u64,
     ) -> Result<Action, PeerError> {
         /*Spawns a task that peeks the process queue waiting for a packet
         from the given address with the given peer. */
 
-        let action_or_timeout = timeout(Duration::from_millis(3000), async {
-            loop {
-                /*Wait notify all from receive task */
-                let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
-                    Some(front) => front,
-                    None => {
-                        process_queue_readers_state.wait();
+        loop {
+            /*Wait notify all from receive task */
+            let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
+                Some(front) => front,
+                None => {
+                    QueueState::set_empty_queue(process_queue_readers_state.clone());
+                    match process_queue_readers_state.wait_timeout_ms(timeout) {
+                        Ok(_) => (),
+                        Err(_) => return Err(PeerError::PeerTimedOut),
+                    };
+                    continue;
+                }
+            };
+            match front {
+                Action::ProcessDatum(datum, addr) => {
+                    let mut datum_hash = [0u8; 32];
+                    datum_hash.copy_from_slice(&datum.as_slice()[0..32]);
+                    if (addr == sock_addr) && (datum_hash == hash) {
+                        break Ok::<Action, PeerError>(Action::ProcessDatum(datum, addr));
+                    } else {
                         continue;
                     }
-                };
-                match front {
-                    Action::ProcessDatum(datum, addr) => {
-                        let mut datum_hash = [0u8; 32];
-                        datum_hash.copy_from_slice(&datum.as_slice()[0..32]);
-                        if (addr == sock_addr) && (datum_hash == hash) {
-                            break Ok::<Action, PeerError>(Action::ProcessDatum(datum, addr));
-                        } else {
-                            continue;
-                        }
-                    }
-                    Action::ProcessNoDatum(_addr) => break Err(PeerError::NoDatum),
-                    _ => continue,
                 }
+                Action::ProcessNoDatum(_addr) => break Err(PeerError::NoDatum),
+                _ => continue,
             }
-        });
-
-        match action_or_timeout.await {
-            Ok(result) => result,
-            Err(_e) => Err(PeerError::ResponseTimeout),
         }
     }
 
@@ -453,12 +457,28 @@ pub mod import_export {
         action_queue: Arc<Mutex<Queue<Action>>>,
         action_queue_state: Arc<QueueState>,
         sock_addr: SocketAddr,
-        my_data: Arc<Peer>
+        my_data: Arc<Peer>,
     ) {
+        Queue::lock_and_push_mul(
+            action_queue.clone(),
+            vec![
+                Action::SendHello(
+                    None,
+                    my_data.get_name().unwrap().as_bytes().to_vec(),
+                    sock_addr,
+                ),
+                Action::SendRoot(None, sock_addr),
+                Action::SendPublicKey(None, sock_addr),
+            ],
+        );
         Queue::lock_and_push_mul(
             action_queue,
             vec![
-                Action::SendHello(None, my_data.get_name().unwrap().as_bytes().to_vec(), sock_addr),
+                Action::SendHello(
+                    None,
+                    my_data.get_name().unwrap().as_bytes().to_vec(),
+                    sock_addr,
+                ),
                 Action::SendRoot(None, sock_addr),
                 Action::SendPublicKey(None, sock_addr),
             ],
@@ -680,7 +700,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             _server_sock_addr4,
-            my_data.clone()
+            my_data.clone(),
         );
         handshake(
             process_queue.clone(),
@@ -688,7 +708,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             sock_addr,
-            my_data.clone()
+            my_data.clone(),
         );
         // let hash = [
         //     211, 20, 115, 228, 84, 20, 231, 30, 31, 144, 12, 151, 66, 10, 253, 48, 29, 89, 243,
@@ -731,6 +751,7 @@ mod tests {
             // yoan_hash,
             peer_hash,
             _server_sock_addr4,
+            10000,
         );
         let _ = fetch1.await;
         // let fetch2 = fetch_subtree_from(
@@ -813,7 +834,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             server_sock_addr4.clone(),
-            my_data.clone()
+            my_data.clone(),
         );
         handshake(
             process_queue.clone(),
@@ -821,7 +842,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             sock_addr.clone(),
-            my_data.clone()
+            my_data.clone(),
         );
 
         let root_hash = <[u8; 32]>::try_from(
@@ -845,6 +866,7 @@ mod tests {
             // yoan_hash,
             root_hash,
             server_sock_addr4,
+            10000,
         )
         .await;
 
@@ -929,7 +951,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             server_sock_addr4.clone(),
-            my_data.clone()
+            my_data.clone(),
         );
         handshake(
             process_queue.clone(),
@@ -937,7 +959,7 @@ mod tests {
             action_queue.clone(),
             action_queue_state.clone(),
             sock_addr.clone(),
-            my_data.clone()
+            my_data.clone(),
         );
         // keep_alive_to_peer(
         //     action_queue,

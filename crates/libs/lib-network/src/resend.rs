@@ -1,7 +1,7 @@
 use crate::{
     congestion_handler::{PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
-    peer::ActivePeers,
+    peer::ActivePeers, import_export::keep_alive_to_peer,
 };
 use std::{
     net::SocketAddr,
@@ -9,14 +9,21 @@ use std::{
     time::Duration,
     thread::sleep
 };
+use crate::{
+    action::Action,
+    peer::Peer,
+};
 
 
 /*Remark: Packets/ids are popped only when received. */
 pub fn resend_task(
     pending_ids: Arc<Mutex<PendingIds>>,
     _peek_active_peers: Arc<Mutex<ActivePeers>>,
+    action_queue: Arc<Mutex<Queue<Action>>>,
+    action_queue_state: Arc<QueueState>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
+    my_data: Arc<Peer>
 ) {
     tokio::spawn(async move {
         /*Shouldn't wait/resend after replies!!  */
@@ -24,8 +31,9 @@ pub fn resend_task(
         let server_socket_addr6: SocketAddr =
             "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
 
+        keep_alive_to_peer(action_queue.clone(), action_queue_state.clone(), server_socket_addr4.clone(), my_data, 30_000);
         loop {
-            sleep(Duration::from_millis(1000));
+            sleep(Duration::from_secs(2));
             // pending_ids_state.wait();
             let (addr_to_send_nat_trav, packet_to_resend) =
                 PendingIds::packets_to_resend(Arc::clone(&pending_ids));

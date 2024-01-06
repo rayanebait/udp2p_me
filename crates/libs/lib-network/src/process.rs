@@ -3,7 +3,7 @@ use core::panic;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
 
-use log::{debug, error, info};
+use log::{debug, error};
 use crate::action::Action;
 
 use crate::peer::*;
@@ -101,7 +101,7 @@ pub fn process_action(
         }
         Action::ProcessError(_id, error_msg, sock_addr) => {
             /*DONE */
-            info!(
+            error!(
                 "Received Error with body: {}\n from {}\n",
                 String::from_utf8(error_msg).unwrap(),
                 sock_addr
@@ -196,7 +196,7 @@ pub fn process_action(
         }
         Action::ProcessErrorReply(err_msg_reply, sock_addr) => {
             /*DONE */
-            info!(
+            error!(
                 "Received ErrorReply with body:{}\n from {}\n",
                 String::from_utf8_lossy(&err_msg_reply),
                 sock_addr
