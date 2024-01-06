@@ -208,9 +208,6 @@ async fn main() -> Result<()> {
             {
                 Ok(_) => (),
                 Err(e) => {
-                    task_canceller(
-                        cancel.clone(),
-                    );
                     error!("{e}");
                     return Ok(());
                 }
