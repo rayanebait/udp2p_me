@@ -18,6 +18,7 @@ use {
         sync::{Arc, Mutex, RwLock},
     },
     tokio_util::sync::CancellationToken,
+    log::debug,
 };
 
 pub fn task_launcher(
@@ -139,22 +140,13 @@ pub fn task_launcher(
 }
 
 pub fn task_canceller(
-        receive_queue_state: Arc<QueueState>,
-        action_queue_state: Arc<QueueState>,
-        send_queue_state: Arc<QueueState>,
-        process_queue_state: Arc<QueueState>,
-        process_queue_readers_state: Arc<QueueState>,
         cancel: CancellationToken
 ) {
+    debug!("cancel start");
     cancel.cancel();
-    QueueState::set_non_empty_queue(receive_queue_state.clone());
-    QueueState::set_non_empty_queue(action_queue_state.clone());
-    QueueState::set_non_empty_queue(send_queue_state.clone());
-    QueueState::set_non_empty_queue(process_queue_readers_state.clone());
-    QueueState::set_non_empty_queue(process_queue_state.clone());
-    QueueState::set_non_empty_queue(receive_queue_state.clone());
-    QueueState::set_non_empty_queue(action_queue_state.clone());
-    QueueState::set_non_empty_queue(send_queue_state.clone());
-    QueueState::set_non_empty_queue(process_queue_readers_state.clone());
-    QueueState::set_non_empty_queue(process_queue_state.clone());
+    cancel.cancel();
+    cancel.cancel();
+    cancel.cancel();
+    cancel.cancel();
+    debug!("cancel finished");
 }

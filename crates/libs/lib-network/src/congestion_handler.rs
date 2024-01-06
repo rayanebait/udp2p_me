@@ -3,8 +3,9 @@ use std::net::SocketAddr;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
+use tokio::sync::Notify;
 
-use log::{debug, error};
+use log::error;
 use std::time::{Duration, Instant};
 
 // use crate::{peer_data::*, packet};
@@ -474,24 +475,33 @@ impl PendingIds {
         for (id, (_addr, packet_type, rto, attempts, nat_trav)) in
             pending_ids_guard.id_to_addr.iter_mut()
         {
-            if *nat_trav == true && *attempts > 15 {
-                id_to_pop.push(*id);
-            } else if *attempts > 10 {
-                id_to_send_nat_trav.push(*id);
-                id_to_resend.push(*id);
-                *nat_trav = true;
-            } else if rto.elapsed() > Duration::from_secs(2) {
-                if *packet_type != PacketType::NatTraversalRequest {
-                    id_to_resend.push(*id);
+            if *nat_trav == true {
+                if *attempts > 15{
+                    id_to_pop.push(*id);
+                }else {
+                    if *packet_type != PacketType::NatTraversalRequest {
+                        id_to_resend.push(*id);
+                        id_to_send_nat_trav.push(*id);
+                    }
+                }
+            } else{
+                if *attempts > 10 {
+                    id_to_send_nat_trav.push(*id);
+                    *nat_trav = true;
+                } else if rto.elapsed() > Duration::from_secs(2) {
+                    if *packet_type != PacketType::NatTraversalRequest {
+                        id_to_resend.push(*id);
+                        *attempts+=1;
+                    }
                 }
             }
         }
-
         let mut addr_to_send_nat_trav = vec![];
-        debug!(
-            "to nat_trav {:?}\nto pop {:?}\n to resend {:?}",
-            id_to_send_nat_trav, id_to_pop, id_to_resend
-        );
+        /*WEIRD*/
+        // debug!(
+        //     "to nat trav {:?}\nto pop {:?}\n to resend {:?}",
+        //     id_to_send_nat_trav, id_to_pop, id_to_resend
+        // );
 
         for id in id_to_pop {
             pending_ids_guard.id_to_packet.remove(&id);

@@ -4,7 +4,9 @@ use hex;
 use lib_network::{
     action::*,
     congestion_handler::*,
-    import_export::{download_from, register, handshake, keep_alive_to_peer, peek_until_root_reply_from},
+    import_export::{
+        download_from, handshake, keep_alive_to_peer, peek_until_root_reply_from, register,
+    },
     peer::*,
     store::*,
     task_launcher_canceller::*,
@@ -122,7 +124,7 @@ async fn main() -> Result<()> {
                 }
             };
 
-            let addr4 = UdpSocket::bind("0.0.0.0:0").await;
+            let addr4 = UdpSocket::bind("0.0.0.0:40000").await;
             let sock4: Arc<UdpSocket>;
             match addr4 {
                 Ok(a) => sock4 = Arc::new(a),
@@ -191,18 +193,30 @@ async fn main() -> Result<()> {
                     bail!("Invalid peer address {e}.")
                 }
             }
-            info!("Contacting address {}", sock_addr.to_string());
 
             // Make handshake blocking
-            register(
+            match register(
                 process_queue.clone(),
                 process_queue_state.clone(),
                 process_queue_readers_state.clone(),
                 action_queue.clone(),
                 action_queue_state.clone(),
                 my_data.clone(),
-                cancel.clone()
-            ).await;
+                cancel.clone(),
+            )
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    task_canceller(
+                        cancel.clone(),
+                    );
+                    error!("{e}");
+                    return Ok(());
+                }
+            };
+
+            info!("Contacting address {}", sock_addr.to_string());
 
             handshake(
                 process_queue.clone(),
@@ -210,6 +224,7 @@ async fn main() -> Result<()> {
                 action_queue.clone(),
                 action_queue_state.clone(),
                 sock_addr,
+                my_data.clone(),
             );
 
             let peer_hash = match peer_hash {
@@ -261,8 +276,9 @@ async fn main() -> Result<()> {
                 action_queue.clone(),
                 action_queue_state.clone(),
                 sock_addr,
+                my_data.clone(),
                 30000000000,
-                cancel.clone()
+                cancel.clone(),
             );
 
             let peer_hash = match peer_hash {
@@ -286,7 +302,6 @@ async fn main() -> Result<()> {
                 sock_addr,
             )
             .await;
-
 
             match content {
                 Ok(node) => {
@@ -327,6 +342,7 @@ async fn main() -> Result<()> {
                             bail!("Failed to save file {e}")
                         }
                     }
+                    task_canceller(cancel.clone());
                 }
                 Err(PeerError::FileIsDirectory) => {
                     match maps.lock() {
@@ -351,27 +367,23 @@ async fn main() -> Result<()> {
                                     )
                                 );
                             }
+                            task_canceller(cancel.clone());
                         }
                         Err(e) => {
+                            task_canceller(cancel.clone());
                             error!("[Code 32] Download failed with error {e}");
                             bail!("Download failed with error {e}")
                         }
                     };
                 }
                 Err(e) => {
+                    task_canceller(cancel.clone());
                     error!("[Code 33] Download failed with error {e}");
                     bail!("Download failed with error {e}")
                 }
             }
 
-            task_canceller(
-                receive_queue_state.clone(),
-                action_queue_state.clone(),
-                send_queue_state.clone(),
-                process_queue_state.clone(),
-                process_queue_readers_state.clone(),
-                cancel.clone(),
-            );
+            task_canceller(cancel.clone());
         }
     }
 

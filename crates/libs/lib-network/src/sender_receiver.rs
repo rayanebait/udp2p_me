@@ -3,7 +3,10 @@ use tokio_util::sync::CancellationToken;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use tokio::net::UdpSocket;
+use tokio::{
+    net::UdpSocket,
+    select
+};
 
 
 use crate::congestion_handler::{PendingIds, Queue, QueueState};
@@ -21,17 +24,22 @@ pub fn receiver4(
 ) {
     tokio::spawn(async move {
         loop {
-            if cancel.is_cancelled(){
-                break
-            }
             /*Get the first packet in the Queue or None if the queue
-            is empty */
-            let (sock_addr, packet) = match Packet::recv_from(&sock4).await {
-                Ok(packet_and_addr) => packet_and_addr,
-                _ => {
-                    continue;
-                }
-            };
+            is empty. Also break, if task is cancelled. */
+            let (sock_addr, packet) = 
+                match select!{
+                    packet_and_addr = Packet::recv_from(&sock4)=> {
+                        packet_and_addr
+                    },
+                    
+                    _ = cancel.cancelled()=>{
+                        debug!("receiver cancelled");
+                        break
+                    }
+                }{
+                    Ok(packet_and_addr)=> packet_and_addr,
+                    _=> continue,
+                };
 
             debug!(
                 "Received {} packet from {}\n",
@@ -53,17 +61,22 @@ pub fn receiver6(
 ) {
     tokio::spawn(async move {
         loop {
-            if cancel.is_cancelled(){
-                break
-            }
             /*Get the first packet in the Queue or None if the queue
             is empty */
-            let (sock_addr, packet) = match Packet::recv_from(&sock6).await {
-                Ok(packet_and_addr) => packet_and_addr,
-                _ => {
-                    continue;
-                }
-            };
+            let (sock_addr, packet) = 
+                match select!{
+                    packet_and_addr = Packet::recv_from(&sock6)=> {
+                        packet_and_addr
+                    },
+                    
+                    _ = cancel.cancelled()=>{
+                        break
+                        debug!("received cancelled");
+                    },
+                }{
+                    Ok(packet_and_addr)=> packet_and_addr,
+                    _=> continue,
+                };
 
             debug!(
                 "Received {} packet from {} : {:?}\n",
@@ -89,9 +102,6 @@ pub fn sender(
 ) {
     tokio::spawn(async move {
         loop {
-            if cancel.is_cancelled(){
-                break
-            }
             /*Get the first packet in the Queue or None if the queue
             is empty */
             let packet_for_addr = {
@@ -114,8 +124,18 @@ pub fn sender(
                 None => {
                     QueueState::set_empty_queue(Arc::clone(&send_queue_state));
                     /*Passively wait for non empty queue state */
-                    send_queue_state.wait();
-                    continue;
+                    select! {
+                        _ = async {
+                            debug!("sender wait");
+                            send_queue_state.wait()
+                        }=>{
+                            continue
+                        }
+                        _ = cancel.cancelled()=>{
+                            debug!("sender cancelled");
+                            break
+                        }
+                    }
                 }
             };
 

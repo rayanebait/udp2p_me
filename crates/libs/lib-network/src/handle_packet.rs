@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use log::{debug, error};
 use tokio_util::sync::CancellationToken;
-
+use tokio::select;
 
 use crate::action::*;
 use crate::congestion_handler::*;
@@ -27,55 +27,63 @@ pub fn handle_packet_task(
     cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
-        loop {
-            if cancel.is_cancelled(){
-                break
-            }
-            let action_or_error = match Queue::lock_and_pop(Arc::clone(&receive_queue)) {
-                Some((packet, sock_addr)) =>
-                /*receive queue is not empty get a packet and handle it*/
-                /*verif packet? */
-                {
-                    // println!(
-                    //     "Received {} packet from {}\n",
-                    //     packet.get_packet_type(),
-                    //     sock_addr,
-                    // );
-                    handle_packet(
-                        packet,
-                        sock_addr,
-                        Arc::clone(&pending_ids), /*return the action required */
-                    )
-                }
-                None => {
-                    /*
-                        receive queue is empty wait for the activity of
-                        the receive queue
-                    */
-                    // println!("handle packet waits");
-                    QueueState::set_empty_queue(Arc::clone(&receive_queue_state));
-                    receive_queue_state.wait();
-                    continue;
-                }
-            };
+        let non_ending_loop = async {
+            loop {
 
-            match action_or_error {
-                Ok(action) => {
-                    /* we have an action, push it to the queue*/
-                    Queue::write_lock_and_push(Arc::clone(&process_queue), action.clone());
-                    QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
-                    QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
-                    continue;
-                }
-                Err(HandlingError::InvalidPacketError) => {
-                    debug!("[handle packet task] Invalid packet error");
-                    return;
-                }
-                _ => {
-                    error!("Should not happen");
-                    panic!("Shouldn't happen")
-                }
-            };
+                let action_or_error = match Queue::lock_and_pop(Arc::clone(&receive_queue)) {
+                    Some((packet, sock_addr)) =>
+                    /*receive queue is not empty get a packet and handle it*/
+                    /*verif packet? */
+                    {
+                        // println!(
+                        //     "Received {} packet from {}\n",
+                        //     packet.get_packet_type(),
+                        //     sock_addr,
+                        // );
+                        handle_packet(
+                            packet,
+                            sock_addr,
+                            Arc::clone(&pending_ids), /*return the action required */
+                        )
+                    }
+                    None => {
+                        /*
+                            receive queue is empty wait for the activity of
+                            the receive queue
+                        */
+                        // println!("handle packet waits");
+                        QueueState::set_empty_queue(Arc::clone(&receive_queue_state));
+                        debug!("handle wait");
+                        receive_queue_state.wait();
+                        continue
+                    }
+                };
+
+                match action_or_error {
+                    Ok(action) => {
+                        /* we have an action, push it to the queue*/
+                        Queue::write_lock_and_push(Arc::clone(&process_queue), action.clone());
+                        QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
+                        QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
+                        continue;
+                    }
+                    Err(HandlingError::InvalidPacketError) => {
+                        debug!("[handle packet task] Invalid packet error");
+                        return;
+                    }
+                    _ => {
+                        error!("Should not happen");
+                        panic!("Shouldn't happen")
+                    }
+                };
+            }
+        };
+
+        select!{
+            _= non_ending_loop => (),
+            _=cancel.cancelled()=>{
+                debug!("handling finished")
+            },
         }
     });
 }

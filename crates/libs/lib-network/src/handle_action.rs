@@ -6,8 +6,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::action::Action;
 
+use log::debug;
 
 use crate::packet::{Packet, PacketBuilder};
+use tokio::select;
 use log::error;
 use tokio_util::sync::CancellationToken;
 
@@ -27,33 +29,38 @@ pub fn handle_action_task(
     cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
-        loop {
-            if cancel.is_cancelled(){
-                break
+        let non_ending_loop = async {
+            loop {
+                match Queue::lock_and_pop(Arc::clone(&action_queue)) {
+                    Some(action) => {
+                        /*action queue is not empty get an action and handle it*/
+                        handle_action(
+                            action,
+                            Arc::clone(&send_queue),
+                            Arc::clone(&send_queue_state),
+                            Arc::clone(&process_queue),
+                            Arc::clone(&process_queue_state),
+                        );
+                        /*return the action required */
+                    }
+                    None => {
+                        /*
+                            action queue is empty wait for the activity of
+                            the receive/process queue
+                        */
+                        QueueState::set_empty_queue(Arc::clone(&action_queue_state));
+                        // println!("action wait");
+                        debug!("handle wait");
+                        action_queue_state.wait();
+                        continue
+                        }
+                };
             }
-            match Queue::lock_and_pop(Arc::clone(&action_queue)) {
-                Some(action) => {
-                    /*action queue is not empty get an action and handle it*/
-                    handle_action(
-                        action,
-                        Arc::clone(&send_queue),
-                        Arc::clone(&send_queue_state),
-                        Arc::clone(&process_queue),
-                        Arc::clone(&process_queue_state),
-                    );
-                    /*return the action required */
-                }
-                None => {
-                    /*
-                        action queue is empty wait for the activity of
-                        the receive/process queue
-                    */
-                    QueueState::set_empty_queue(Arc::clone(&action_queue_state));
-                    // println!("action wait");
-                    action_queue_state.wait();
-                    continue;
-                }
-            };
+        };
+
+        select!{
+            _ = non_ending_loop =>(),
+            _ = cancel.cancelled()=> (),
         }
     });
 }
