@@ -136,6 +136,19 @@ pub fn task_launcher(
             send_queue_state.clone(),
             cancel.clone()
         );
+
+        tokio::spawn(async move {
+            loop {
+                if cancel.is_cancelled() {
+                    break
+                }
+                QueueState::set_non_empty_queue(receive_queue_state.clone());
+                QueueState::set_non_empty_queue(action_queue_state.clone());
+                QueueState::set_non_empty_queue(send_queue_state.clone());
+                QueueState::set_non_empty_queue(process_queue_state.clone());
+                QueueState::set_non_empty_queue(process_queue_readers_state.clone());
+            }
+        });
     });
 }
 

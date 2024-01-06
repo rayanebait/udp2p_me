@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
-use tokio::sync::Notify;
 
 use log::error;
 use std::time::{Duration, Instant};
