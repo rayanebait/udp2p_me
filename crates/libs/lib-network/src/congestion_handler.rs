@@ -476,18 +476,22 @@ impl PendingIds {
         {
             if *nat_trav == true && *attempts > 15 {
                 id_to_pop.push(*id);
+            } else if *attempts > 10 {
+                id_to_send_nat_trav.push(*id);
+                id_to_resend.push(*id);
+                *nat_trav = true;
             } else if rto.elapsed() > Duration::from_secs(2) {
                 if *packet_type != PacketType::NatTraversalRequest {
                     id_to_resend.push(*id);
                 }
-            } else if *attempts > 10 {
-                id_to_send_nat_trav.push(*id);
-                *nat_trav = true;
             }
         }
 
         let mut addr_to_send_nat_trav = vec![];
-        debug!("to pop {:?},\n to resend {:?}", id_to_pop, id_to_resend);
+        debug!(
+            "to nat_trav {:?}\nto pop {:?}\n to resend {:?}",
+            id_to_send_nat_trav, id_to_pop, id_to_resend
+        );
 
         for id in id_to_pop {
             pending_ids_guard.id_to_packet.remove(&id);

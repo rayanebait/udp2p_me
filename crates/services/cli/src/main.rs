@@ -4,7 +4,7 @@ use hex;
 use lib_network::{
     action::*,
     congestion_handler::*,
-    import_export::{download_from, handshake, keep_alive_to_peer, peek_until_root_reply_from},
+    import_export::{download_from, register, handshake, keep_alive_to_peer, peek_until_root_reply_from},
     peer::*,
     store::*,
     task_launcher_canceller::*,
@@ -194,6 +194,16 @@ async fn main() -> Result<()> {
             info!("Contacting address {}", sock_addr.to_string());
 
             // Make handshake blocking
+            register(
+                process_queue.clone(),
+                process_queue_state.clone(),
+                process_queue_readers_state.clone(),
+                action_queue.clone(),
+                action_queue_state.clone(),
+                my_data.clone(),
+                cancel.clone()
+            ).await;
+
             handshake(
                 process_queue.clone(),
                 process_queue_readers_state.clone(),
