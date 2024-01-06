@@ -370,7 +370,6 @@ async fn main() -> Result<()> {
                     bail!("Download failed with error {e}")
                 }
             }
-
         }
     }
     std::process::exit(0);
