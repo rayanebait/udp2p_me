@@ -252,7 +252,7 @@ async fn main() -> Result<()> {
                 action_queue_state.clone(),
                 sock_addr,
                 30000000000,
-                cancel.clone()
+                cancel.clone(),
             );
 
             let peer_hash = match peer_hash {
@@ -276,7 +276,6 @@ async fn main() -> Result<()> {
                 sock_addr,
             )
             .await;
-
 
             match content {
                 Ok(node) => {
@@ -364,6 +363,6 @@ async fn main() -> Result<()> {
             );
         }
     }
-
-    return Ok(());
+    std::process::exit(0);
+    // return Ok(());
 }
