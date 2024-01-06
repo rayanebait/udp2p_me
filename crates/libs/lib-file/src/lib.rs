@@ -2,7 +2,7 @@ pub mod mk_fs {
     //! This module contains functions to manipulate files.
     //! Its goal is to provide all utilities to extract data from files and prepare it to be exported to the REST server and sent over the network.
     use anyhow::{bail, Context, Result};
-    use log::{debug, error, info, warn};
+    use log::error;
     use sha2::{Digest, Sha256};
     use std::{
         collections::HashMap,
@@ -41,21 +41,21 @@ pub mod mk_fs {
                 "Node[{:?}]({})",
                 self.ntype,
                 self.path.as_path().to_string_lossy()
-            );
+            )?;
             writeln!(
                 f,
                 "\tHash : {:?}...",
                 &self.hash.iter().take(10).collect::<Vec<&u8>>()
-            );
+            )?;
             match &self.children {
                 Some(c) => {
-                    write!(f, "\tChildren :");
+                    write!(f, "\tChildren :")?;
                     for s in c.iter() {
-                        write!(f, "\n{}", s);
+                        write!(f, "\n{}", s)?;
                     }
                 }
                 _ => {
-                    write!(f, "\tChildren : No child");
+                    write!(f, "\tChildren : No child")?;
                 }
             };
             return Ok(());
@@ -91,10 +91,10 @@ pub mod mk_fs {
 
             // If the data is small enough to fit in a single chunk
             // return the chunk directly
-            let mut file = File::open(path)?;
+            let file = File::open(path)?;
 
             if data.len() <= chunk_size {
-                return (Ok(MktFsNode {
+                return Ok(MktFsNode {
                     path: path.clone(),
                     ntype: MktFsNodeType::CHUNK {
                         file,
@@ -102,7 +102,7 @@ pub mod mk_fs {
                     },
                     children: None,
                     hash: hash_bytes_prefix(&data, 0),
-                }));
+                });
             }
             // If the data cannot fit in a single chunk it has to be split in children nodes
             else {
@@ -140,7 +140,7 @@ pub mod mk_fs {
                             Some((layer_size * i) as u64 + offset.unwrap_or_default()),
                         ) {
                             Ok(n) => Some(n),
-                            Err(e) => {
+                            Err(_e) => {
                                 log::warn!("Failed to build a MktFsNode for {:?}.", &path);
                                 None
                             }
@@ -160,14 +160,14 @@ pub mod mk_fs {
                 hash.copy_from_slice(hasher.finalize().as_slice());
 
                 // Generate root node with the computed children and hash
-                return (Ok(MktFsNode {
+                return Ok(MktFsNode {
                     path: path.into(),
                     ntype: MktFsNodeType::BIGFILE {
                         path: path.to_path_buf(),
                     },
                     children: Some(children),
                     hash: hash,
-                }));
+                });
             }
         }
 
@@ -211,10 +211,10 @@ pub mod mk_fs {
                         Ok(path) => {
                             match MktFsNode::try_from_path(&path.path(), chunk_size, max_children) {
                                 Ok(n) => Some(n),
-                                Err(e) => None,
+                                Err(_e) => None,
                             }
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             return None;
                         }
                     })
@@ -229,14 +229,14 @@ pub mod mk_fs {
                 hash.copy_from_slice(hasher.finalize().as_slice());
 
                 // Generate root node
-                return (Ok(MktFsNode {
+                return Ok(MktFsNode {
                     path: path.clone(),
                     ntype: MktFsNodeType::DIRECTORY {
                         path: path.to_path_buf(),
                     },
                     children: Some(children),
                     hash: hash,
-                }));
+                });
             } else {
                 error!(
                     "Failed to create a node for path {}.",
@@ -282,7 +282,7 @@ pub mod mk_fs {
                     result.append(&mut vec![0u8]);
                     result.append(&mut buf);
                 }
-                MktFsNodeType::BIGFILE { path } => {
+                MktFsNodeType::BIGFILE { path: _ } => {
                     result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![1u8]);
                     match &self.children {
@@ -294,7 +294,7 @@ pub mod mk_fs {
                         None => (),
                     }
                 }
-                MktFsNodeType::DIRECTORY { path } => {
+                MktFsNodeType::DIRECTORY { path: _ } => {
                     result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![2u8]);
                     match &self.children {
@@ -312,7 +312,7 @@ pub mod mk_fs {
                 }
             }
 
-            return (result);
+            return result;
         }
 
         /// Create a list of all contained `MkFsNode` of type `MkFsNodeType::CHUNK`.
@@ -325,7 +325,7 @@ pub mod mk_fs {
                 MktFsNodeType::CHUNK { .. } => chunks.push(&self),
                 MktFsNodeType::BIGFILE { .. } => match &self.children {
                     Some(nodes) => {
-                        nodes
+                        let _ = nodes
                             .iter()
                             .map(|c| chunks.append(&mut c.to_chunk_list()))
                             .collect::<Vec<_>>();
@@ -334,7 +334,7 @@ pub mod mk_fs {
                 },
                 MktFsNodeType::DIRECTORY { .. } => match &self.children {
                     Some(nodes) => {
-                        nodes
+                        let _ = nodes
                             .iter()
                             .map(|c| chunks.append(&mut c.to_chunk_list()))
                             .collect::<Vec<_>>();
@@ -342,7 +342,7 @@ pub mod mk_fs {
                     None => (),
                 },
             }
-            return (chunks);
+            return chunks;
         }
     }
 
@@ -379,7 +379,7 @@ mod tests {
 
     use crate::mk_fs::*;
     use hex;
-    use std::{io::Read, os::unix::fs::FileExt, path::PathBuf, str};
+    use std::{io::Read, os::unix::fs::FileExt, path::PathBuf};
 
     #[test]
     fn lib_file_hash_bytes() {
@@ -459,13 +459,13 @@ mod tests {
     #[should_panic]
     fn lib_file_node_from_path_fail() {
         let path = PathBuf::from("/var/lib/libvirt/images");
-        let read_dir = MktFsNode::try_from_path(&path, 2, 2).unwrap();
+        let _read_dir = MktFsNode::try_from_path(&path, 2, 2).unwrap();
     }
 
     #[test]
     fn lib_file_node_from_path() {
         let path = PathBuf::from("/tmp/abc/test.txt");
-        let node = MktFsNode::try_from_path(&path, 1024, 32).unwrap();
+        let _node = MktFsNode::try_from_path(&path, 1024, 32).unwrap();
     }
 
     #[test]
@@ -477,7 +477,7 @@ mod tests {
             21, 208, 20, 204, 73, 14, 59, 170, 131, 72, 237, 69, 189, 154, 4, 38, 76, 225, 124,
             157, 143, 164, 78, 78, 6, 169, 69, 111, 79, 182, 40, 196,
         ];
-        let result = map.get(&hash);
+        let _result = map.get(&hash);
         // match result {
         //     Some(r) => println!("{:?}", r),
         //     None => println!("Node not found for hash {:?}", hash),
@@ -489,15 +489,18 @@ mod tests {
         let path = PathBuf::from("/tmp/abc/test.txt");
         let node = MktFsNode::try_from_path(&path, 1024, 32).unwrap();
         match node.ntype {
-            MktFsNodeType::DIRECTORY { path } => {
+            MktFsNodeType::DIRECTORY { path: _ } => {
                 // println!("Directory : {path:#?}");
             }
-            MktFsNodeType::BIGFILE { path } => {
+            MktFsNodeType::BIGFILE { path: _ } => {
                 // println!("BigFile : {path:#?}");
             }
-            MktFsNodeType::CHUNK { mut file, offset } => {
+            MktFsNodeType::CHUNK {
+                mut file,
+                offset: _,
+            } => {
                 let mut content = Vec::<u8>::new();
-                file.read_to_end(&mut content);
+                let _ = file.read_to_end(&mut content);
                 // println!("Content : {}", str::from_utf8(content.as_slice()).unwrap());
             }
         }

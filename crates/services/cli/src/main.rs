@@ -2,16 +2,17 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hex;
 use lib_network::{
-    action::*, congestion_handler::*, import_export::*, packet::*, peer::*, store::*,
+    action::*, congestion_handler::*, import_export::*, peer::*, store::*,
     task_launcher_canceller::*,
 };
 use lib_web::discovery;
-use log::{debug, error, info, warn};
+use log::{error, info};
+use owo_colors::OwoColorize;
 use std::{
     fs::File,
     io::Write,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{Arc, MutexGuard},
     time::Duration,
 };
 use tokio::{self, net::UdpSocket, time::sleep};
@@ -36,48 +37,19 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Fetch the available peers.
-    FetchPeers {
+    Peers {
         /// Url of peers page
         #[arg(short = 'u', long)]
         host: String,
     },
-    /// Fetch the infos of a peer
-    FetchPeerInfo {
-        /// Url of the peers server
-        #[arg(short = 'u', long)]
-        host: String,
-
-        /// Peer name
-        #[arg(short, long)]
-        peer: String,
-    },
-    /// Download the datum associated with a hash
-    GetDatum {
-        /// Address of the peer
-        #[arg(short, long)]
-        peer: String,
-        /// Datum hash
-        #[arg(short, long)]
-        datum: String,
-    },
-    /// Download the file system structure below a hash
-    /// If no hash is provided, the program will first try to get the root hash of the peer.
-    FetchFileTree {
+    /// Download a file from a hash
+    Download {
         /// Address of the peer
         #[arg(short, long)]
         peer: String,
         /// Datum hash
         #[arg(short, long)]
         datum: Option<String>,
-    },
-    /// Download a file from a hash
-    FetchFile {
-        /// Address of the peer
-        #[arg(short, long)]
-        peer: String,
-        /// Datum hash
-        #[arg(short, long)]
-        datum: String,
         /// Output path
         /// Default value is ./dump
         #[arg(short, long)]
@@ -91,89 +63,89 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::FetchPeers { host } => {
-            log::info!("Fetching peers from central server {}.", host);
+        Commands::Peers { host } => {
+            info!("Fetching peers from central server {}.", host);
             let client = discovery::get_client(5)?;
             let url = discovery::parse_url(host)?;
             let peers = discovery::get_peers_names(&client, &url).await?;
-            println!("Peers :");
-            for (i, peer) in peers.iter().enumerate() {
-                println!("\t[{i}] = {peer}");
+            println!("Available peers :");
+            for (_i, peer) in peers.iter().enumerate() {
+                let addr: discovery::Peer;
+                match discovery::get_peer_addresses(&client, &url, &peer).await {
+                    Ok(a) => addr = a,
+                    Err(_) => continue,
+                }
+
+                let root = discovery::get_peer_root(&client, &url, peer).await?;
+                let key = discovery::get_peer_key(&client, &url, peer).await?;
+                println!("\n\u{1f4c7} {}", peer.green());
+                println!("  \u{1f4e9} Addresses :");
+                for a in addr.addresses.into_iter() {
+                    println!("    - {a}");
+                }
+                match &root.len() {
+                    0 => (),
+                    _ => println!("  \u{1f517} Root : {}", hex::encode(root)),
+                }
+                match &key.len() {
+                    0 => (),
+                    _ => println!("  \u{1f511} Key  : {}", hex::encode(key)),
+                }
             }
         }
-        Commands::FetchPeerInfo { host, peer } => {
-            log::info!(
-                "Fetching peer infos for peer {} from central server {}.",
-                peer,
-                host
-            );
-            let client = discovery::get_client(5)?;
-            let url = discovery::parse_url(host)?;
-            let addr = discovery::get_peer_addresses(&client, &url, &peer).await?;
-            let root = discovery::get_peer_root(&client, &url, peer).await?;
-            let key = discovery::get_peer_key(&client, &url, peer).await?;
-            println!("Informations for peer {peer}");
-            println!("Addresses :");
-            for a in addr.addresses.into_iter() {
-                println!("\t- {a}");
-            }
-            println!("Root :\n\t- {}", hex::encode(root));
-            println!("Key :\n\t- {}", hex::encode(key));
-        }
-        Commands::GetDatum { peer, datum } => {
-            log::info!("Fetching datum from peer {} with hash {}.", peer, datum);
-            let datum = match hex::decode(datum) {
-                Ok(h) => match <[u8; 32]>::try_from(h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        bail!("Invalid root hash. Please check your input.");
-                    }
-                },
-                Err(e) => bail!("Failed to decode root hash. Please check your input."),
-            };
-            let packet = PacketBuilder::new()
-                .gen_id()
-                .packet_type(PacketType::GetDatum)
-                .body(datum.to_vec())
-                .build()
-                .unwrap_or_default();
-            println!("{packet:#?}");
-            println!("{:#?}", packet.as_bytes());
-        }
-        Commands::FetchFileTree { peer, datum } => {
-            let mut peer_hash: Option<[u8; 32]> = match datum {
+        Commands::Download {
+            peer,
+            datum,
+            output,
+        } => {
+            let peer_hash: Option<[u8; 32]> = match datum {
                 Some(d) => {
-                    log::info!("Fetching file tree from peer {} for hash {}.", peer, d);
-                    println!("Fetching file tree from peer {} for hash {}.", peer, d);
+                    info!("Fetching content from peer {} for hash {}.", peer, d);
+                    println!("Fetching content from peer {} for hash {}.", peer, d);
                     match hex::decode(d) {
                         Ok(h) => match <[u8; 32]>::try_from(h) {
                             Ok(i) => Some(i),
-                            Err(e) => {
+                            Err(_e) => {
+                                error!("Invalid root hash. Please check your input.");
                                 bail!("Invalid root hash. Please check your input.");
-                                None
                             }
                         },
-                        Err(e) => bail!("Failed to decode root hash. Please check your input."),
+                        Err(_e) => {
+                            error!("Failed to decode root hash. Please check your input.");
+                            bail!("Failed to decode root hash. Please check your input.")
+                        }
                     }
                 }
                 None => {
-                    log::info!("Fetching file tree from peer {} from root hash.", peer);
-                    println!("Fetching file tree from peer {} from root hash.", peer);
+                    info!("Fetching content from peer {} from root hash.", peer);
+                    println!("Fetching content from peer {} from root hash.", peer);
                     None
                 }
             };
 
-            let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
-            let sock6 = Arc::new(
-                UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
-                    .await
-                    .unwrap(),
-            );
+            let addr4 = UdpSocket::bind("0.0.0.0:0").await;
+            let sock4: Arc<UdpSocket>;
+            match addr4 {
+                Ok(a) => sock4 = Arc::new(a),
+                Err(e) => {
+                    error!("Failed to bind IPv4 address : {e}");
+                    bail!("Failed to bind IPv4 address : {e}")
+                }
+            }
+            let addr6 = UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000)).await;
+            let sock6: Arc<UdpSocket>;
+            match addr6 {
+                Ok(a) => sock6 = Arc::new(a),
+                Err(e) => {
+                    error!("Failed to bind IPv6 address : {e}");
+                    bail!("Failed to bind IPv6 address : {e}")
+                }
+            }
             let maps = build_tree_mutex();
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
 
-            let receive_queue_state = Arc::clone(&queues.5);
+            let _receive_queue_state = Arc::clone(&queues.5);
             let action_queue = Arc::clone(&queues.2);
             let action_queue_state = Arc::clone(&queues.6);
             let process_queue = Arc::clone(&queues.3);
@@ -193,23 +165,26 @@ async fn main() -> Result<()> {
                 sock6.clone(),
             );
 
-            let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+            let sock_addr: SocketAddr;
+            match peer.parse() {
+                Ok(s) => sock_addr = s,
+                Err(e) => {
+                    error!("Invalid peer address {e}.");
+                    bail!("Invalid peer address {e}.")
+                }
+            }
+            info!("Contacting address {}", sock_addr.to_string());
+
+            // Make handshake blocking
             handshake(
                 process_queue.clone(),
                 process_queue_readers_state.clone(),
                 action_queue.clone(),
                 action_queue_state.clone(),
-                server_sock_addr4,
+                sock_addr,
             );
 
-            let sock_addr: SocketAddr = peer.parse().unwrap();
-            {
-                Queue::lock_and_push(
-                    Arc::clone(&action_queue),
-                    Action::SendHello(None, "nist".to_string().into_bytes(), *&sock_addr),
-                );
-                QueueState::set_non_empty_queue(action_queue_state.clone());
-            }
+            sleep(Duration::from_millis(500)).await;
 
             let peer_hash = match peer_hash {
                 Some(h) => h,
@@ -229,8 +204,14 @@ async fn main() -> Result<()> {
                             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                             process_queue_state.wait();
                             sleep(Duration::from_millis(100)).await;
-                            let guard = active_peers.lock().unwrap();
-                            /*If panics here, means the packet received had invalid hash (body length<32) */
+                            let guard: MutexGuard<'_, ActivePeers>;
+                            match active_peers.lock() {
+                                Ok(l) => guard = l,
+                                Err(e) => {
+                                    error!("Failed to aquire active peers {e}");
+                                    bail!("Failed to aquire active peers {e}")
+                                }
+                            }
                             match guard.get(sock_addr) {
                                 Some(peer) => break peer.get_root_hash(),
                                 None => continue,
@@ -239,143 +220,102 @@ async fn main() -> Result<()> {
                     } {
                         Some(h) => h,
                         None => {
-                            println!("Peer is not exporting any file.");
+                            println!("{}", "Peer is not exporting any file.".red());
+                            error!("{}", "Peer is not exporting any file.".red());
                             bail!("Peer is not exporting any file.");
                         }
                     }
                 }
             };
 
-            fetch_subtree_from(
+            info!("Selected peer hash is {}", hex::encode(&peer_hash));
+
+            let content = download_from(
                 Arc::clone(&process_queue),
                 Arc::clone(&process_queue_readers_state),
                 Arc::clone(&action_queue),
                 Arc::clone(&action_queue_state),
                 Arc::clone(&maps),
-                // yoan_hash,
                 peer_hash,
                 sock_addr,
             )
             .await;
 
-            match maps.lock() {
-                Ok(m) => {
-                    println!("\nFile tree :");
-                    let n_to_h_hashmap = get_name_to_hash_hashmap(&m.0, &m.2);
-                    let mut names: Vec<&String> = n_to_h_hashmap.keys().collect();
-                    names.sort();
-                    for n in names.into_iter() {
-                        let mut step = n.chars().filter(|ch| *ch == '/').count();
-                        if step > 0 {
-                            step -= 1;
+            match content {
+                Ok(node) => {
+                    let path = match output {
+                        Some(s) => s.to_string(),
+                        None => {
+                            info!("No output file provided, defaulting to ./dump");
+                            "./dump".to_string()
                         }
-                        let mut carry = str::repeat("   ", step);
-                        carry.push_str("└──");
-                        println!("{carry} {n}");
-                        println!("   {carry} {}", hex::encode(n_to_h_hashmap.get(n).unwrap()));
-                    }
-                }
-                Err(e) => error!("Got error {e}"),
-            };
-        }
-        Commands::FetchFile {
-            peer,
-            datum,
-            output,
-        } => {
-            let hash = match hex::decode(datum) {
-                Ok(h) => match <[u8; 32]>::try_from(h) {
-                    Ok(i) => i,
-                    Err(e) => {
-                        bail!("Invalid root hash. Please check your input.");
-                    }
-                },
-                Err(e) => bail!("Failed to decode root hash. Please check your input."),
-            };
+                    };
 
-            let path = match output {
-                Some(s) => s.to_string(),
-                None => "./dump".to_string(),
-            };
+                    log::info!(
+                        "Saving file from peer {} for hash {}.",
+                        peer,
+                        hex::encode(&peer_hash)
+                    );
+                    println!(
+                        "Saving file from peer {} for hash {}.",
+                        peer,
+                        hex::encode(&peer_hash)
+                    );
 
-            log::info!("Fetching file from peer {} for hash {}.", peer, &datum);
-            println!("Fetching file from peer {} for hash {}.", peer, &datum);
+                    let mut file = match File::create(&path) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            error!("Could not create or open file {} : {}", &path, e);
+                            bail!("Could not create or open file {} : {}", &path, e)
+                        }
+                    };
 
-            let mut file = match File::create(&path) {
-                Ok(f) => f,
-                Err(e) => bail!("Could not create or open file {} : {}", &path, e),
-            };
-
-            let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
-            let sock6 = Arc::new(
-                UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000))
-                    .await
-                    .unwrap(),
-            );
-            let maps = build_tree_mutex();
-            let queues = build_queues();
-            let active_peers = ActivePeers::build_mutex();
-
-            let receive_queue_state = Arc::clone(&queues.5);
-            let action_queue = Arc::clone(&queues.2);
-            let action_queue_state = Arc::clone(&queues.6);
-            let process_queue = Arc::clone(&queues.3);
-            let process_queue_state = Arc::clone(&queues.8);
-            let process_queue_readers_state = Arc::clone(&queues.9);
-
-            let mut my_data = Peer::new();
-            my_data.set_name("nist".to_string());
-            let my_data = Arc::new(my_data);
-
-            task_launcher(
-                queues,
-                active_peers.clone(),
-                my_data.clone(),
-                sock4.clone(),
-                sock6.clone(),
-            );
-
-            /*jch */
-            let sock_addr: SocketAddr = peer.parse().unwrap();
-            {
-                Queue::lock_and_push(
-                    Arc::clone(&action_queue),
-                    Action::SendHello(None, "nist".to_string().into_bytes(), *&sock_addr),
-                );
-                QueueState::set_non_empty_queue(action_queue_state.clone());
-            }
-
-            let downloaded_file = download_file(
-                Arc::clone(&process_queue),
-                Arc::clone(&process_queue_readers_state),
-                Arc::clone(&action_queue),
-                Arc::clone(&action_queue_state),
-                Arc::clone(&maps),
-                hash,
-                sock_addr,
-            )
-            .await;
-
-            match downloaded_file {
-                Ok(f) => {
-                    let content = f.flatten();
+                    let content = node.flatten();
                     println!("Size of file {}", &content.len());
                     match file.write(&content) {
                         Ok(size) => println!("Download completed. Wrote {} bytes", size),
                         Err(e) => {
                             println!("Failed to save file {e}");
+                            error!("Failed to save file {e}");
                             bail!("Failed to save file {e}")
                         }
                     }
                 }
-                Err(e) => {
-                    println!("Download failed {e}");
-                    bail!("Download failed {e}")
+                Err(PeerError::FileIsDirectory) => {
+                    match maps.lock() {
+                        Ok(m) => {
+                            println!("\nFile tree :");
+                            let n_to_h_hashmap = get_name_to_hash_hashmap(&m.0, &m.2);
+                            let mut names: Vec<&String> = n_to_h_hashmap.keys().collect();
+                            names.sort();
+                            for n in names.into_iter() {
+                                let mut step = n.chars().filter(|ch| *ch == '/').count();
+                                if step > 0 {
+                                    step -= 1;
+                                }
+                                let carry = str::repeat("   ", step);
+                                println!("{carry}└──\u{1f4c4} {n}");
+                                println!(
+                                    "   {carry} {}",
+                                    hex::encode(
+                                        n_to_h_hashmap
+                                            .get(n)
+                                            .expect("Failed because of unknown error [code 31]")
+                                    )
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("[Code 32] Download failed with error {e}");
+                            bail!("Download failed with error {e}")
+                        }
+                    };
                 }
-            };
-        }
-        _ => {
-            error!("No subcommand");
+                Err(e) => {
+                    error!("[Code 33] Download failed with error {e}");
+                    bail!("Download failed with error {e}")
+                }
+            }
         }
     }
     return Ok(());

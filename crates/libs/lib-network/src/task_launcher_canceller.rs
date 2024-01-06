@@ -17,7 +17,6 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex, RwLock},
     },
-    tokio::{join, time},
 };
 
 pub fn task_launcher(
@@ -121,7 +120,12 @@ pub fn task_launcher(
             Arc::clone(&send_queue_state),
             Arc::clone(&pending_ids),
         );
-        resend_task(pending_ids.clone(),  active_peers.clone(),send_queue.clone(), send_queue_state.clone());
+        resend_task(
+            pending_ids.clone(),
+            active_peers.clone(),
+            send_queue.clone(),
+            send_queue_state.clone(),
+        );
     });
 }
 

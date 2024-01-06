@@ -1,29 +1,15 @@
 use core::panic;
-use std::collections::HashMap;
-use std::error;
+
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
-use futures::future::join_all;
-use futures::stream::FuturesUnordered;
-use futures::Future;
-use log::{debug, error, info, warn};
-use tokio::join;
-use tokio::select;
-use tokio::task::{JoinError, JoinHandle};
-use tokio::time::{sleep, Sleep};
+use log::{debug, error};
 
 use crate::action::Action;
-use crate::packet::PacketBuilder;
-use crate::peer::*;
-use crate::store::{
-    build_tree_maps, get_child_to_parent_hashmap, get_hash_to_name_hashmap,
-    get_parent_to_child_hashmap,
-};
-use crate::{action, congestion_handler::*};
 
-use lib_file::mk_fs::{self, MktFsNode};
+use crate::peer::*;
+
+use crate::congestion_handler::*;
 
 /*Chaque sous task du CLI lit passivement la process queue
 et push des paquets dans l'action queue en conséquence ?*/
@@ -93,7 +79,7 @@ pub fn process_action(
 ) {
     let my_name = my_data.get_name().unwrap().as_bytes().to_vec();
     match action {
-        Action::ProcessNoOp(sock_addr) => {
+        Action::ProcessNoOp(_sock_addr) => {
             /*DONE */
             return;
         }
@@ -102,19 +88,19 @@ pub fn process_action(
             /*Send Hello reply then process the hello. Fails when the name is invalid utf8.*/
             Queue::lock_and_push(
                 Arc::clone(&action_queue),
-                Action::SendHelloReply(
-                    id,
-                    my_data.get_extensions(),
-                    my_name,
-                    sock_addr,
-                ),
+                Action::SendHelloReply(id, my_data.get_extensions(), my_name, sock_addr),
             );
             QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
             /*Add peer and set peer timer (30s) */
-            ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
+            let _ = ActivePeers::set_peer_extensions_and_name(
+                active_peers,
+                sock_addr,
+                extensions,
+                name,
+            );
             return;
         }
-        Action::ProcessError(id, error_msg, sock_addr) => {
+        Action::ProcessError(_id, error_msg, sock_addr) => {
             /*DONE */
             info!(
                 "Received Error with body: {}\n from {}\n",
@@ -189,7 +175,7 @@ pub fn process_action(
             }
             return;
         }
-        Action::ProcessGetDatum(id, hash, sock_addr) => {
+        Action::ProcessGetDatum(id, _hash, sock_addr) => {
             Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
             QueueState::set_non_empty_queue(action_queue_state.clone());
             /*to do */
@@ -201,7 +187,12 @@ pub fn process_action(
         // }
         Action::ProcessHelloReply(extensions, name, sock_addr) => {
             /*DONE */
-            ActivePeers::set_peer_extensions_and_name(active_peers, sock_addr, extensions, name);
+            let _ = ActivePeers::set_peer_extensions_and_name(
+                active_peers,
+                sock_addr,
+                extensions,
+                name,
+            );
             return;
         }
         Action::ProcessErrorReply(err_msg_reply, sock_addr) => {
@@ -229,9 +220,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::UnknownPeer) => {
-                    ()
-                }
+                Err(PeerError::UnknownPeer) => (),
                 Err(e) => {
                     error!("{e}");
                     panic!("Unkown error in process_action {}\n", e)
@@ -255,9 +244,7 @@ pub fn process_action(
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
-                Err(PeerError::UnknownPeer) => {
-                    ()
-                }
+                Err(PeerError::UnknownPeer) => (),
                 Err(e) => {
                     error!("{e}");
                     panic!("Unkown error in process_action {}\n", e)
@@ -265,39 +252,38 @@ pub fn process_action(
             }
             return;
         }
-        Action::ProcessDatum(datum, sock_addr) => {
+        Action::ProcessDatum(_datum, _sock_addr) => {
             /*DONE? */
             return;
         }
-        Action::ProcessNoDatum(sock_addr) => {
+        Action::ProcessNoDatum(_sock_addr) => {
             /*DONE? */
             return;
         }
-        Action::ProcessNatTraversal(body, sock_addr) => {
+        Action::ProcessNatTraversal(body, _sock_addr) => {
             let addr: SocketAddr;
             if body.len() == 6 {
                 addr = SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(body[0], body[1], body[2], body[3])),
-                    ((body[4] as u16) * 256 + (body[5] as u16)),
+                    (body[4] as u16) * 256 + (body[5] as u16),
                 );
             } else if body.len() == 18 {
                 addr = SocketAddr::new(
                     IpAddr::V6(Ipv6Addr::new(
-                        ((body[0] as u16) * 256 + (body[1] as u16)),
-                        ((body[2] as u16) * 256 + (body[3] as u16)),
-                        ((body[4] as u16) * 256 + (body[5] as u16)),
-                        ((body[6] as u16) * 256 + (body[7] as u16)),
-                        ((body[8] as u16) * 256 + (body[9] as u16)),
-                        ((body[10] as u16) * 256 + (body[11] as u16)),
-                        ((body[12] as u16) * 256 + (body[13] as u16)),
-                        ((body[14] as u16) * 256 + (body[15] as u16)),
+                        (body[0] as u16) * 256 + (body[1] as u16),
+                        (body[2] as u16) * 256 + (body[3] as u16),
+                        (body[4] as u16) * 256 + (body[5] as u16),
+                        (body[6] as u16) * 256 + (body[7] as u16),
+                        (body[8] as u16) * 256 + (body[9] as u16),
+                        (body[10] as u16) * 256 + (body[11] as u16),
+                        (body[12] as u16) * 256 + (body[13] as u16),
+                        (body[14] as u16) * 256 + (body[15] as u16),
                     )),
-                    ((body[16] as u16) * 256 + (body[17] as u16)),
+                    (body[16] as u16) * 256 + (body[17] as u16),
                 );
             } else {
                 return;
             }
-
 
             Queue::lock_and_push(
                 Arc::clone(&action_queue),

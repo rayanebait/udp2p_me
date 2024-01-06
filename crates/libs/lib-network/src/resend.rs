@@ -1,25 +1,21 @@
-use tokio_util::time::DelayQueue;
+
 
 use crate::{
-    action::Action,
-    congestion_handler::{self, PendingIds, Queue, QueueState},
+    congestion_handler::{PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
-    peer::ActivePeers, import_export::keep_alive_to_peer,
+    peer::ActivePeers,
 };
 use std::{
     net::SocketAddr,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     thread::sleep,
     time::Duration,
 };
 
-/*
-
-*/
 /*Remark: Packets/ids are popped only when received. */
 pub fn resend_task(
     pending_ids: Arc<Mutex<PendingIds>>,
-    peek_active_peers: Arc<Mutex<ActivePeers>>,
+    _peek_active_peers: Arc<Mutex<ActivePeers>>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
 ) {
@@ -33,7 +29,7 @@ pub fn resend_task(
             // pending_ids_state.wait();
             let (addr_to_send_nat_trav, packet_to_resend) =
                 PendingIds::packets_to_resend(Arc::clone(&pending_ids));
-            
+
             Queue::lock_and_push_mul(sending_queue.clone(), packet_to_resend);
             QueueState::set_non_empty_queue(sending_queue_state.clone());
 
@@ -52,13 +48,3 @@ pub fn resend_task(
         }
     });
 }
-
-// pub fn track_single_packet_task(
-//     pending_ids: Arc<Mutex<PendingIds>>,
-//     peek_active_peers: Arc<Mutex<ActivePeers>>,
-//     action_queue: Arc<Mutex<Queue<Action>>>,
-//     action_queue_state: Arc<QueueState>,
-//     id: [u8;4]
-// ){
-
-// }

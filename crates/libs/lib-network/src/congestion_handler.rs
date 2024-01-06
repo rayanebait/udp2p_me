@@ -1,17 +1,17 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{SocketAddr};
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use futures::Future;
-use log::{debug, error, info, warn};
+
+use log::{debug, error};
 use std::time::{Duration, Instant};
-use tokio::time::{sleep, Sleep};
+
 
 // use crate::{peer_data::*, packet};
 use crate::action::*;
-use crate::packet::{self, *};
+use crate::packet::{*};
 
 #[derive(Default)]
 // pub struct ActiveSockets{
@@ -115,7 +115,7 @@ impl<T: Clone> Queue<T> {
     }
 
     pub fn read_lock_and_peek(queue: Arc<RwLock<Queue<T>>>) -> Option<T> {
-        let mut queue_guard = match queue.read() {
+        let queue_guard = match queue.read() {
             Ok(queue_gard) => queue_gard,
             Err(poison_error) => {
                 error!("{poison_error}");
@@ -153,7 +153,7 @@ impl<T: Clone> Queue<T> {
         //     queue_guard.pop_front();
         //     queue_guard.push_back(data);
         // } else {
-            queue_guard.push_back(data);
+        queue_guard.push_back(data);
         // }
     }
     pub fn lock_and_push(queue: Arc<Mutex<Queue<T>>>, data: T) {
@@ -190,7 +190,7 @@ impl<T: Clone> Queue<T> {
         };
 
         // if queue_guard.can_pop {
-            queue_guard.pop_front()
+        queue_guard.pop_front()
         // } else {
         //     queue_guard.peek_front()
         // }
@@ -217,7 +217,7 @@ impl<T: Clone> Queue<T> {
         self.data.pop_front()
     }
     pub fn flush_and_front(&mut self) -> Option<T> {
-        let mut front = self.data.front();
+        let front = self.data.front();
         let front = match front {
             Some(front) => Some(front.clone()),
             None => None,
@@ -227,7 +227,7 @@ impl<T: Clone> Queue<T> {
     }
 
     pub fn peek_front(&self) -> Option<T> {
-        let mut front = self.data.front();
+        let front = self.data.front();
         let front = match front {
             Some(front) => Some(front.clone()),
             None => None,
@@ -235,7 +235,7 @@ impl<T: Clone> Queue<T> {
         front
     }
     pub fn get_front(&mut self) -> Option<T> {
-        let mut front = self.data.front().cloned();
+        let front = self.data.front().cloned();
         let front = match front {
             Some(front) => Some(front.clone()),
             None => None,
@@ -342,15 +342,15 @@ impl PendingIds {
         peer_addr: &SocketAddr,
     ) {
         if packet.is(*&PacketType::NatTraversal) {
-            return
-        } else if packet.is(*&PacketType::NatTraversalRequest){
-            return
-        }else if packet.is(*&PacketType::Error){
-            return
-        }else if packet.is(*&PacketType::ErrorReply){
-            return
+            return;
+        } else if packet.is(*&PacketType::NatTraversalRequest) {
+            return;
+        } else if packet.is(*&PacketType::Error) {
+            return;
+        } else if packet.is(*&PacketType::ErrorReply) {
+            return;
         } else if packet.is_response() {
-            return
+            return;
         }
 
         let mut pending_ids_guard = match pending_ids.lock() {
@@ -369,7 +369,7 @@ impl PendingIds {
         */
         match pending_ids_guard.search_id_mut(&packet) {
             /*id exists */
-            Ok((sock_addr, packet_type, _, attempts)) => {
+            Ok((sock_addr, _packet_type, _, attempts)) => {
                 if *sock_addr != *peer_addr {
                     return;
                 } else {
@@ -404,7 +404,7 @@ impl PendingIds {
         socket_addr: SocketAddr,
     ) -> Result<SocketAddr, CongestionHandlerError> {
         if *packet.get_packet_type() == PacketType::NatTraversal {
-            return Ok(socket_addr)
+            return Ok(socket_addr);
         }
         /*get mutex to check and pop id if it is a response */
         let mut pending_ids_guard = match pending_ids.lock() {
@@ -466,7 +466,7 @@ impl PendingIds {
         let mut id_to_send_nat_trav = vec![];
         let mut id_to_pop = vec![];
 
-        for (id, (addr, packet_type, rto, attempts)) in pending_ids_guard.id_to_addr.iter_mut() {
+        for (id, (_addr, packet_type, rto, attempts)) in pending_ids_guard.id_to_addr.iter_mut() {
             if *attempts > 5 {
                 id_to_pop.push(*id);
                 id_to_send_nat_trav.push(*id);

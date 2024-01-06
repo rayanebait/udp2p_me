@@ -14,9 +14,9 @@ pub mod discovery {
 
     impl fmt::Display for Peer {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "Peer[{}]\nAdresses :", self.name);
+            write!(f, "Peer[{}]\nAdresses :", self.name)?;
             for (i, a) in self.addresses.iter().enumerate() {
-                write!(f, "\n\t[{i}] {a}");
+                write!(f, "\n\t[{i}] {a}")?;
             }
             Ok(())
         }
@@ -46,7 +46,7 @@ pub mod discovery {
         match response.status() {
             StatusCode::OK => match response.text().await {
                 Ok(s) => return Ok(s),
-                Err(e) => bail!(format!(
+                Err(_e) => bail!(format!(
                     "Failed to get retrieve text from host {}",
                     url.as_str()
                 )),
@@ -76,7 +76,7 @@ pub mod discovery {
         match response.status() {
             StatusCode::OK => match response.bytes().await {
                 Ok(s) => return Ok(s),
-                Err(e) => bail!(format!(
+                Err(_e) => bail!(format!(
                     "Failed to get retrieve text from host {}",
                     url.as_str()
                 )),
@@ -132,13 +132,13 @@ pub mod discovery {
             .user_agent("Projet M2 protocoles Internet")
             .build()
             .context("Failed to build the client.");
-        return (client);
+        return client;
     }
 
     pub fn parse_url(host: impl Into<String>) -> Result<Url> {
         let host = host.into();
         let url = Url::parse(&host)?;
-        return (Ok(url));
+        return Ok(url);
     }
 
     #[cfg(test)]
@@ -194,7 +194,7 @@ pub mod discovery {
                         println!("Peer key = {:?}", key);
                     }
                 }
-                Err(e) => println!("Failed to retrieve peer key"),
+                Err(_e) => println!("Failed to retrieve peer key"),
             }
         }
 
@@ -216,7 +216,7 @@ pub mod discovery {
                         println!("Peer root = {:#?}", hash);
                     }
                 }
-                Err(e) => println!("Failed to retrieve peer root"),
+                Err(_e) => println!("Failed to retrieve peer root"),
             }
         }
     }

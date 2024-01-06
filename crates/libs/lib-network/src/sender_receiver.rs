@@ -1,12 +1,12 @@
-use log::{debug, error, info, warn};
+use log::{debug, error};
 use std::net::SocketAddr;
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
-use std::thread::sleep;
-use tokio::{net::UdpSocket, spawn};
-use tokio_util::task::TaskTracker;
+use std::sync::{Arc, Mutex};
+
+use tokio::{net::UdpSocket};
+
 
 use crate::congestion_handler::{PendingIds, Queue, QueueState};
-use crate::packet::{Packet, PacketError};
+use crate::packet::{Packet};
 
 /*
     Maybe lock only first and last element ? sender accesses only the first
@@ -113,7 +113,7 @@ pub fn sender(
             };
 
             match sent {
-                Ok(size) => {
+                Ok(_size) => {
                     debug!(
                         "Sending {} packet to {}\n",
                         packet.get_packet_type(),
