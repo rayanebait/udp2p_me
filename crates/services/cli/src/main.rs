@@ -55,7 +55,7 @@ enum Commands {
     },
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 15)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 100)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
                     action_queue.clone(),
                     action_queue_state.clone(),
                     sock_addr,
-                    10000,
+                    100000,
                 )
                 .await
                 {
@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
                 Arc::clone(&maps),
                 peer_hash,
                 sock_addr,
-                10000,
+                100000,
             )
             .await;
 

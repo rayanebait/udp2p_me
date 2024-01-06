@@ -134,7 +134,6 @@ pub mod import_export {
             let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
                 Some(front) => front,
                 None => {
-                    QueueState::set_empty_queue(process_queue_readers_state.clone());
                     match process_queue_readers_state.wait_timeout_ms(timeout) {
                         Ok(_) => (),
                         Err(_) => return Err(PeerError::PeerTimedOut),
@@ -168,7 +167,6 @@ pub mod import_export {
             let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
                 Some(front) => front,
                 None => {
-                    QueueState::set_empty_queue(process_queue_readers_state.clone());
                     match process_queue_readers_state.wait_timeout_ms(timeout) {
                         Ok(_) => (),
                         Err(_) => return Err(PeerError::PeerTimedOut),
@@ -427,7 +425,6 @@ pub mod import_export {
             let front = match Queue::read_lock_and_peek(Arc::clone(&peek_process_queue)) {
                 Some(front) => front,
                 None => {
-                    QueueState::set_empty_queue(process_queue_readers_state.clone());
                     match process_queue_readers_state.wait_timeout_ms(timeout) {
                         Ok(_) => (),
                         Err(_) => return Err(PeerError::PeerTimedOut),
