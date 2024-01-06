@@ -30,7 +30,7 @@ The download command will detect if the hash is pointing to a directory or a fil
     │   ├── lib-network
     │   └── lib-web
     └── services
-        ├── cli
+        └── cli
 ```
 
 ### Libraries
