@@ -18,7 +18,6 @@ use {
         sync::{Arc, Mutex, RwLock},
     },
     tokio_util::sync::CancellationToken,
-    log::debug,
 };
 
 pub fn task_launcher(
@@ -150,16 +149,4 @@ pub fn task_launcher(
             }
         });
     });
-}
-
-pub fn task_canceller(
-        cancel: CancellationToken
-) {
-    debug!("cancel start");
-    cancel.cancel();
-    cancel.cancel();
-    cancel.cancel();
-    cancel.cancel();
-    cancel.cancel();
-    debug!("cancel finished");
 }

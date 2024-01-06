@@ -342,7 +342,6 @@ async fn main() -> Result<()> {
                             bail!("Failed to save file {e}")
                         }
                     }
-                    task_canceller(cancel.clone());
                 }
                 Err(PeerError::FileIsDirectory) => {
                     match maps.lock() {
@@ -367,23 +366,19 @@ async fn main() -> Result<()> {
                                     )
                                 );
                             }
-                            task_canceller(cancel.clone());
                         }
                         Err(e) => {
-                            task_canceller(cancel.clone());
                             error!("[Code 32] Download failed with error {e}");
                             bail!("Download failed with error {e}")
                         }
                     };
                 }
                 Err(e) => {
-                    task_canceller(cancel.clone());
                     error!("[Code 33] Download failed with error {e}");
                     bail!("Download failed with error {e}")
                 }
             }
 
-            task_canceller(cancel.clone());
         }
     }
     std::process::exit(0);
