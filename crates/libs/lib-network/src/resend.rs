@@ -1,5 +1,7 @@
 
 
+use tokio_util::sync::CancellationToken;
+
 use crate::{
     congestion_handler::{PendingIds, Queue, QueueState},
     packet::{Packet, PacketBuilder},
@@ -18,6 +20,7 @@ pub fn resend_task(
     _peek_active_peers: Arc<Mutex<ActivePeers>>,
     sending_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     sending_queue_state: Arc<QueueState>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         /*Shouldn't wait/resend after replies!!  */
@@ -25,6 +28,9 @@ pub fn resend_task(
         let server_socket_addr6: SocketAddr =
             "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             sleep(Duration::from_millis(1000));
             // pending_ids_state.wait();
             let (addr_to_send_nat_trav, packet_to_resend) =

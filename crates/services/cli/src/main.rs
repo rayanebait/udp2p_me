@@ -2,20 +2,19 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use hex;
 use lib_network::{
-    action::*, congestion_handler::*, import_export::{handshake, download_from}, peer::*, store::*,
+    action::*,
+    congestion_handler::*,
+    import_export::{download_from, handshake, keep_alive_to_peer, peek_until_root_reply_from},
+    peer::*,
+    store::*,
     task_launcher_canceller::*,
 };
 use lib_web::discovery;
 use log::{error, info};
 use owo_colors::OwoColorize;
-use std::{
-    fs::File,
-    io::Write,
-    net::SocketAddr,
-    sync::{Arc, MutexGuard},
-    time::Duration,
-};
-use tokio::{self, net::UdpSocket, time::sleep};
+use std::{fs::File, io::Write, net::SocketAddr, sync::Arc};
+use tokio::{self, net::UdpSocket};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
 #[command(name = "UDP2P-cli")]
@@ -141,21 +140,39 @@ async fn main() -> Result<()> {
                     bail!("Failed to bind IPv6 address : {e}")
                 }
             }
+
+            let cancel = CancellationToken::new();
             let maps = build_tree_mutex();
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
 
-            let _receive_queue_state = Arc::clone(&queues.5);
-            let action_queue = Arc::clone(&queues.2);
-            let action_queue_state = Arc::clone(&queues.6);
-            let process_queue = Arc::clone(&queues.3);
-            let process_queue_state = Arc::clone(&queues.8);
-            let process_queue_readers_state = Arc::clone(&queues.9);
+            let (
+                _receive_queue,
+                _send_queue,
+                action_queue,
+                process_queue,
+                _pending_ids,
+                receive_queue_state,
+                action_queue_state,
+                send_queue_state,
+                process_queue_state,
+                process_queue_readers_state,
+            ) = (
+                Arc::clone(&queues.0),
+                Arc::clone(&queues.1),
+                Arc::clone(&queues.2),
+                Arc::clone(&queues.3),
+                Arc::clone(&queues.4),
+                Arc::clone(&queues.5),
+                Arc::clone(&queues.6),
+                Arc::clone(&queues.7),
+                Arc::clone(&queues.8),
+                Arc::clone(&queues.9),
+            );
 
             let mut my_data = Peer::new();
             my_data.set_name("nist".to_string());
             let my_data = Arc::new(my_data);
-
 
             task_launcher(
                 queues,
@@ -163,6 +180,7 @@ async fn main() -> Result<()> {
                 my_data.clone(),
                 sock4.clone(),
                 sock6.clone(),
+                cancel.clone(),
             );
 
             let sock_addr: SocketAddr;
@@ -184,47 +202,65 @@ async fn main() -> Result<()> {
                 sock_addr,
             );
 
-            sleep(Duration::from_millis(500)).await;
+            let peer_hash = match peer_hash {
+                Some(hash) => Some(hash),
+                None => match peek_until_root_reply_from(
+                    process_queue.clone(),
+                    process_queue_state.clone(),
+                    process_queue_readers_state.clone(),
+                    action_queue.clone(),
+                    action_queue_state.clone(),
+                    sock_addr,
+                    10000,
+                )
+                .await
+                {
+                    Ok(Action::ProcessRootReply(hash, _)) => hash,
+                    Err(PeerError::ResponseTimeout) => bail!("Couldn't fetch peer root"),
+                    _ => bail!("Unexpected error"),
+                    // let mut attempt = 0;
+                    // loop {
+                    //     if attempt < 4 {
+                    //         attempt += 1;
+                    //     } else {
+                    //         break None;
+                    //     }
+                    //     Queue::lock_and_push(
+                    //         Arc::clone(&action_queue),
+                    //         Action::SendRoot(None, sock_addr),
+                    //     );
+                    //     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
+                    //     process_queue_state.wait();
+                    //     sleep(Duration::from_millis(100)).await;
+                    //     let guard: MutexGuard<'_, ActivePeers>;
+                    //     match active_peers.lock() {
+                    //         Ok(l) => guard = l,
+                    //         Err(e) => {
+                    //             error!("Failed to aquire active peers {e}");
+                    //             bail!("Failed to aquire active peers {e}")
+                    //         }
+                    //     }
+                    //     match guard.get(sock_addr) {
+                    //         Some(peer) => break peer.get_root_hash(),
+                    //         None => continue,
+                    //     }
+                    // }
+                },
+            };
+            keep_alive_to_peer(
+                action_queue.clone(),
+                action_queue_state.clone(),
+                sock_addr,
+                30000000000,
+                cancel.clone()
+            );
 
             let peer_hash = match peer_hash {
                 Some(h) => h,
                 None => {
-                    match {
-                        let mut attempt = 0;
-                        loop {
-                            if attempt < 4 {
-                                attempt += 1;
-                            } else {
-                                break None;
-                            }
-                            Queue::lock_and_push(
-                                Arc::clone(&action_queue),
-                                Action::SendRoot(None, sock_addr),
-                            );
-                            QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
-                            process_queue_state.wait();
-                            sleep(Duration::from_millis(100)).await;
-                            let guard: MutexGuard<'_, ActivePeers>;
-                            match active_peers.lock() {
-                                Ok(l) => guard = l,
-                                Err(e) => {
-                                    error!("Failed to aquire active peers {e}");
-                                    bail!("Failed to aquire active peers {e}")
-                                }
-                            }
-                            match guard.get(sock_addr) {
-                                Some(peer) => break peer.get_root_hash(),
-                                None => continue,
-                            }
-                        }
-                    } {
-                        Some(h) => h,
-                        None => {
-                            println!("{}", "Peer is not exporting any file.".red());
-                            error!("{}", "Peer is not exporting any file.".red());
-                            bail!("Peer is not exporting any file.");
-                        }
-                    }
+                    println!("{}", "Peer is not exporting any file.".red());
+                    error!("{}", "Peer is not exporting any file.".red());
+                    bail!("Peer is not exporting any file.");
                 }
             };
 
@@ -240,6 +276,7 @@ async fn main() -> Result<()> {
                 sock_addr,
             )
             .await;
+
 
             match content {
                 Ok(node) => {
@@ -316,7 +353,17 @@ async fn main() -> Result<()> {
                     bail!("Download failed with error {e}")
                 }
             }
+
+            task_canceller(
+                receive_queue_state.clone(),
+                action_queue_state.clone(),
+                send_queue_state.clone(),
+                process_queue_state.clone(),
+                process_queue_readers_state.clone(),
+                cancel.clone(),
+            );
         }
     }
+
     return Ok(());
 }

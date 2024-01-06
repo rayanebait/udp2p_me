@@ -8,7 +8,8 @@ use crate::action::Action;
 
 
 use crate::packet::{Packet, PacketBuilder};
-use log::{error};
+use log::error;
+use tokio_util::sync::CancellationToken;
 
 use crate::congestion_handler::*;
 
@@ -23,9 +24,13 @@ pub fn handle_action_task(
     action_queue_state: Arc<QueueState>,
     process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             match Queue::lock_and_pop(Arc::clone(&action_queue)) {
                 Some(action) => {
                     /*action queue is not empty get an action and handle it*/

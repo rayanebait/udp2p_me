@@ -1,17 +1,15 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-
 use log::{debug, error};
 use std::time::{Duration, Instant};
 
-
 // use crate::{peer_data::*, packet};
 use crate::action::*;
-use crate::packet::{*};
+use crate::packet::*;
 
 #[derive(Default)]
 // pub struct ActiveSockets{
@@ -291,7 +289,7 @@ pub struct PendingIds {
             /*resending attempts */
             usize,
             // /*Attempted NatTraversal */
-            // bool,
+            bool,
         ),
     >,
     id_to_packet: HashMap<[u8; 4], (Packet, SocketAddr)>, //attempted_nat_trav: HashMap<SocketAddr, bool>?
@@ -380,7 +378,13 @@ impl PendingIds {
             Err(CongestionHandlerError::NoPacketWithIdError) => {
                 pending_ids_guard.id_to_addr.insert(
                     *packet.get_id(),
-                    (*peer_addr, *packet.get_packet_type(), Instant::now(), 0),
+                    (
+                        *peer_addr,
+                        *packet.get_packet_type(),
+                        Instant::now(),
+                        0,
+                        false,
+                    ),
                 );
                 pending_ids_guard
                     .id_to_packet
@@ -421,6 +425,7 @@ impl PendingIds {
             Ok((sock_addr, ..)) => {
                 /*if id exists, pop the packet before handling it. */
                 /*We choose to not handle the collisions. */
+                /*compute rto ? */
                 pending_ids_guard.pop_packet_id(packet.get_id());
 
                 /*Now check if the address it was sent to is
@@ -466,19 +471,24 @@ impl PendingIds {
         let mut id_to_send_nat_trav = vec![];
         let mut id_to_pop = vec![];
 
-        for (id, (_addr, packet_type, rto, attempts)) in pending_ids_guard.id_to_addr.iter_mut() {
-            if *attempts > 5 {
+        for (id, (_addr, packet_type, rto, attempts, nat_trav)) in
+            pending_ids_guard.id_to_addr.iter_mut()
+        {
+            if *nat_trav == true && *attempts > 15 {
                 id_to_pop.push(*id);
-                id_to_send_nat_trav.push(*id);
-            } else if rto.elapsed() > Duration::from_secs(1) {
+            } else if rto.elapsed() > Duration::from_secs(2) {
                 if *packet_type != PacketType::NatTraversalRequest {
                     id_to_resend.push(*id);
                 }
+            } else if *attempts > 10 {
+                id_to_send_nat_trav.push(*id);
+                *nat_trav = true;
             }
         }
 
         let mut addr_to_send_nat_trav = vec![];
         debug!("to pop {:?},\n to resend {:?}", id_to_pop, id_to_resend);
+
         for id in id_to_pop {
             pending_ids_guard.id_to_packet.remove(&id);
             let (addr, ..) = pending_ids_guard.id_to_addr.remove(&id).unwrap();
@@ -509,7 +519,7 @@ impl PendingIds {
         let addr = self.id_to_addr.get_mut(packet_id);
 
         match addr {
-            Some((sock_addr, packet_type, timer, attempts)) => {
+            Some((sock_addr, packet_type, timer, attempts, _)) => {
                 return Ok((sock_addr, packet_type, timer, attempts))
             }
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
@@ -523,7 +533,7 @@ impl PendingIds {
         let addr = self.id_to_addr.get(packet_id);
 
         match addr {
-            Some((sock_addr, _, _, attempts)) => return Ok((*sock_addr, *attempts)),
+            Some((sock_addr, _, _, attempts, _)) => return Ok((*sock_addr, *attempts)),
             None => return Err(CongestionHandlerError::NoPacketWithIdError),
         };
     }

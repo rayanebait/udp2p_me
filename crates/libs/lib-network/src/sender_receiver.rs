@@ -1,12 +1,13 @@
 use log::{debug, error};
+use tokio_util::sync::CancellationToken;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use tokio::{net::UdpSocket};
+use tokio::net::UdpSocket;
 
 
 use crate::congestion_handler::{PendingIds, Queue, QueueState};
-use crate::packet::{Packet};
+use crate::packet::Packet;
 
 /*
     Maybe lock only first and last element ? sender accesses only the first
@@ -16,9 +17,13 @@ pub fn receiver4(
     sock4: Arc<UdpSocket>,
     receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     receive_queue_state: Arc<QueueState>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             /*Get the first packet in the Queue or None if the queue
             is empty */
             let (sock_addr, packet) = match Packet::recv_from(&sock4).await {
@@ -44,9 +49,13 @@ pub fn receiver6(
     sock6: Arc<UdpSocket>,
     receive_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     receive_queue_state: Arc<QueueState>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             /*Get the first packet in the Queue or None if the queue
             is empty */
             let (sock_addr, packet) = match Packet::recv_from(&sock6).await {
@@ -76,9 +85,13 @@ pub fn sender(
     send_queue: Arc<Mutex<Queue<(Packet, SocketAddr)>>>,
     send_queue_state: Arc<QueueState>,
     pending_ids_to_add: Arc<Mutex<PendingIds>>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             /*Get the first packet in the Queue or None if the queue
             is empty */
             let packet_for_addr = {

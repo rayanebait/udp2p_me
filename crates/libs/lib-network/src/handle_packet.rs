@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 
 use log::{debug, error};
+use tokio_util::sync::CancellationToken;
 
 
 use crate::action::*;
@@ -23,9 +24,13 @@ pub fn handle_packet_task(
     process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
     process_queue_readers_state: Arc<QueueState>,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             let action_or_error = match Queue::lock_and_pop(Arc::clone(&receive_queue)) {
                 Some((packet, sock_addr)) =>
                 /*receive queue is not empty get a packet and handle it*/

@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
 
 use log::{debug, error, info};
+use tokio_util::sync::CancellationToken;
 
 use crate::action::Action;
 
@@ -28,10 +29,14 @@ pub fn process_task(
     //send datum.
     //hash_map:?
     //self_data:?
+    cancel: CancellationToken
 ) {
     //Should pop only if too full ? For subtasks to have time to read
     tokio::spawn(async move {
         loop {
+            if cancel.is_cancelled(){
+                break
+            }
             match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
                 Some(action) => {
                     /*action queue is not empty get an action and handle it*/
