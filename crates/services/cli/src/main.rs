@@ -16,7 +16,6 @@ use log::{error, info};
 use owo_colors::OwoColorize;
 use std::{fs::File, io::Write, net::SocketAddr, sync::Arc};
 use tokio::{self, net::UdpSocket};
-use tokio_util::sync::CancellationToken;
 
 #[derive(Parser)]
 #[command(name = "UDP2P-cli")]
@@ -143,7 +142,6 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let cancel = CancellationToken::new();
             let maps = build_tree_mutex();
             let queues = build_queues();
             let active_peers = ActivePeers::build_mutex();
@@ -154,9 +152,9 @@ async fn main() -> Result<()> {
                 action_queue,
                 process_queue,
                 _pending_ids,
-                receive_queue_state,
+                _receive_queue_state,
                 action_queue_state,
-                send_queue_state,
+                _send_queue_state,
                 process_queue_state,
                 process_queue_readers_state,
             ) = (
@@ -182,7 +180,6 @@ async fn main() -> Result<()> {
                 my_data.clone(),
                 sock4.clone(),
                 sock6.clone(),
-                cancel.clone(),
             );
 
             let sock_addr: SocketAddr;
@@ -202,7 +199,6 @@ async fn main() -> Result<()> {
                 action_queue.clone(),
                 action_queue_state.clone(),
                 my_data.clone(),
-                cancel.clone(),
             )
             .await
             {
@@ -275,7 +271,6 @@ async fn main() -> Result<()> {
                 sock_addr,
                 my_data.clone(),
                 30000000000,
-                cancel.clone(),
             );
 
             let peer_hash = match peer_hash {

@@ -13,7 +13,6 @@ pub mod task_launcher_canceller;
 pub mod import_export {
     use std::pin::Pin;
 
-    use tokio_util::sync::CancellationToken;
 
 
     use {
@@ -40,7 +39,6 @@ pub mod import_export {
         action_queue: Arc<Mutex<Queue<Action>>>,
         action_queue_state: Arc<QueueState>,
         my_data: Arc<Peer>,
-        cancel: CancellationToken,
     ) -> Result<(), PeerError>{
         let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
 
@@ -53,7 +51,7 @@ pub mod import_export {
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             server_sock_addr,
-            3000,
+            10000,
         )
         .await
         {
@@ -64,11 +62,14 @@ pub mod import_export {
                     *&server_sock_addr,
                     my_data.clone(),
                     30_000_000_000,
-                    cancel.clone(),
                 );
+                debug!("Register OK");
                 return Ok(())
             }
-            Err(_) => return Err(PeerError::ResponseTimeout),
+            Err(_) =>{
+                debug!("Register failed");
+                 return Err(PeerError::ResponseTimeout)
+            }
         };
     }
 
@@ -78,13 +79,9 @@ pub mod import_export {
         sock_addr: SocketAddr,
         my_data: Arc<Peer>,
         timing: u64,
-        cancel: CancellationToken,
     ) {
         tokio::spawn(async move {
             loop {
-                if cancel.is_cancelled() {
-                    break;
-                }
                 Queue::lock_and_push(
                     Arc::clone(&action_queue),
                     Action::SendHello(
@@ -95,10 +92,7 @@ pub mod import_export {
                 );
                 QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
 
-                match timeout(Duration::from_millis(timing), cancel.cancelled()).await {
-                    Ok(_) => break,
-                    Err(_) => continue,
-                }
+                std::thread::sleep(Duration::from_millis(timing));
             }
         });
     }
@@ -475,8 +469,6 @@ pub mod import_export {
 
 #[cfg(test)]
 mod tests {
-    use tokio_util::sync::CancellationToken;
-
     use {
         super::*,
         crate::{
@@ -541,7 +533,6 @@ mod tests {
         let sock4 = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
 
-        let cancel = CancellationToken::new();
         let tree = MktFsNode::try_from_path(
             &PathBuf::from("/home/splash/files/notes_m2/protocoles_reseaux/tp/Projet/to_export/"),
             1024,
@@ -574,7 +565,6 @@ mod tests {
             Arc::clone(&sock4),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
-            cancel.clone(),
         );
 
         let _handling = handle_packet_task(
@@ -584,7 +574,6 @@ mod tests {
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
             Arc::clone(&process_queue_readers_state),
-            cancel.clone(),
         );
         let _processing_two = handle_action_task(
             Arc::clone(&send_queue),
@@ -593,7 +582,6 @@ mod tests {
             Arc::clone(&action_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
-            cancel.clone(),
         );
         let _processing_one = process_task(
             Arc::clone(&action_queue),
@@ -603,7 +591,6 @@ mod tests {
             Arc::clone(&active_peers),
             Arc::clone(&my_data),
             // Arc::clone(&map)
-            cancel.clone(),
         );
 
         let _sending = sender(
@@ -612,7 +599,6 @@ mod tests {
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&pending_ids),
-            cancel.clone(),
         );
 
         // let metrics = Handle::current().metrics();
@@ -625,7 +611,6 @@ mod tests {
             Arc::clone(&action_queue),
             Arc::clone(&action_queue_state),
             Arc::clone(&my_data),
-            cancel.clone(),
         );
 
         let _ = sleep(Duration::from_secs(1_000));
@@ -645,7 +630,6 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let cancel = CancellationToken::new();
         // let sock6 = Arc::new(
         //     UdpSocket::bind(SocketAddr::new(
         //         "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
@@ -677,7 +661,6 @@ mod tests {
             my_data.clone(),
             sock4.clone(),
             sock6.clone(),
-            cancel.clone(),
         );
 
         /*jch */
@@ -787,7 +770,6 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let cancel = CancellationToken::new();
         // let sock6 = Arc::new(
         //     UdpSocket::bind(SocketAddr::new(
         //         "fdb0:ccfe:b9b5:b600:47a1:849c:2d22:9ce9".parse().unwrap(),
@@ -819,7 +801,6 @@ mod tests {
             my_data.clone(),
             sock4.clone(),
             sock6.clone(),
-            cancel.clone(),
         );
 
         /*jch */
@@ -898,7 +879,6 @@ mod tests {
         let queues = build_queues();
         let active_peers = ActivePeers::build_mutex();
 
-        let cancel = CancellationToken::new();
         let action_queue = Arc::clone(&queues.2);
         let action_queue_state = Arc::clone(&queues.6);
         let _send_queue = Arc::clone(&queues.1);
@@ -917,7 +897,6 @@ mod tests {
             my_data.clone(),
             sock4.clone(),
             sock6.clone(),
-            cancel.clone(),
         );
 
         /*jch */
@@ -943,7 +922,6 @@ mod tests {
             my_data.clone(),
             /*en nanosecs */
             5000000000,
-            cancel.clone(),
         );
         handshake(
             process_queue.clone(),
@@ -979,7 +957,6 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let cancel = CancellationToken::new();
         let sock4 = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
         // let sock = Arc::new(UdpSocket::bind("192.168.1.90:40000").await.unwrap());
         let _maps = build_tree_mutex();
@@ -999,7 +976,6 @@ mod tests {
             my_data.clone(),
             sock4.clone(),
             sock6.clone(),
-            cancel.clone(),
         );
 
         /*jch */
@@ -1040,7 +1016,6 @@ mod tests {
             my_data.clone(),
             /*en nanosecs */
             1_000_000_000,
-            cancel.clone(),
         );
         sleep(Duration::from_secs(2)).await;
 
@@ -1058,7 +1033,6 @@ mod tests {
             my_data.clone(),
             /*en nanosecs */
             9_000_000_000,
-            cancel.clone(),
         );
         sleep(Duration::from_secs(1_000)).await;
         println!("main ends");

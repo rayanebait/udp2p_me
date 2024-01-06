@@ -17,7 +17,6 @@ use {
         net::SocketAddr,
         sync::{Arc, Mutex, RwLock},
     },
-    tokio_util::sync::CancellationToken,
 };
 
 pub fn task_launcher(
@@ -37,7 +36,6 @@ pub fn task_launcher(
     my_data: Arc<Peer>,
     sock4: Arc<UdpSocket>,
     sock6: Arc<UdpSocket>,
-    cancel: CancellationToken
 ) {
     let (
         receive_queue,
@@ -81,14 +79,12 @@ pub fn task_launcher(
             Arc::clone(&sock4),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
-            cancel.clone(),
         );
 
         receiver6(
             Arc::clone(&sock6),
             Arc::clone(&receive_queue),
             Arc::clone(&receive_queue_state),
-            cancel.clone()
         );
 
         handle_packet_task(
@@ -98,7 +94,6 @@ pub fn task_launcher(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
             Arc::clone(&process_queue_readers_state),
-            cancel.clone()
         );
         handle_action_task(
             Arc::clone(&send_queue),
@@ -107,7 +102,6 @@ pub fn task_launcher(
             Arc::clone(&action_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
-            cancel.clone()
         );
         process_task(
             Arc::clone(&action_queue),
@@ -117,7 +111,6 @@ pub fn task_launcher(
             Arc::clone(&active_peers),
             Arc::clone(&my_data),
             // Arc::clone(&map)
-            cancel.clone()
         );
 
         sender(
@@ -126,27 +119,13 @@ pub fn task_launcher(
             Arc::clone(&send_queue),
             Arc::clone(&send_queue_state),
             Arc::clone(&pending_ids),
-            cancel.clone()
         );
         resend_task(
             pending_ids.clone(),
             active_peers.clone(),
             send_queue.clone(),
             send_queue_state.clone(),
-            cancel.clone()
         );
 
-        tokio::spawn(async move {
-            loop {
-                if cancel.is_cancelled() {
-                    break
-                }
-                QueueState::set_non_empty_queue(receive_queue_state.clone());
-                QueueState::set_non_empty_queue(action_queue_state.clone());
-                QueueState::set_non_empty_queue(send_queue_state.clone());
-                QueueState::set_non_empty_queue(process_queue_state.clone());
-                QueueState::set_non_empty_queue(process_queue_readers_state.clone());
-            }
-        });
     });
 }
