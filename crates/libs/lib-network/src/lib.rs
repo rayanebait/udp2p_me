@@ -606,7 +606,9 @@ mod tests {
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
             Arc::clone(&active_peers),
-            Arc::clone(&my_data),
+            Peer::new(),
+            false,
+            PathBuf::from("/home/splash/"),
             // Arc::clone(&map)
         );
 
@@ -670,14 +672,18 @@ mod tests {
 
         let mut my_data = Peer::new();
         my_data.set_name("nist".to_string());
+        let my_data_own = my_data.clone();
         let my_data = Arc::new(my_data);
 
         task_launcher(
             queues,
             active_peers.clone(),
             my_data.clone(),
+            my_data_own,
             sock4.clone(),
             sock6.clone(),
+            false,
+            PathBuf::from("/home/splash/files/dls"),
         );
 
         /*jch */
@@ -809,16 +815,20 @@ mod tests {
         let _process_queue_state = Arc::clone(&queues.8);
         let process_queue_readers_state = Arc::clone(&queues.9);
 
-        let mut my_data = Peer::new();
+        let mut my_data= Peer::new();
         my_data.set_name("nist".to_string());
+        let my_data_own = my_data.clone();
         let my_data = Arc::new(my_data);
 
         task_launcher(
             queues,
             active_peers.clone(),
             my_data.clone(),
+            my_data_own,
             sock4.clone(),
             sock6.clone(),
+            false,
+            PathBuf::from("/home/splash/files/dls"),
         );
 
         /*jch */
@@ -906,16 +916,20 @@ mod tests {
         let _process_queue_state = Arc::clone(&queues.8);
         let process_queue_readers_state = Arc::clone(&queues.9);
 
-        let mut my_data = Peer::new();
+        let mut my_data= Peer::new();
         my_data.set_name("nist".to_string());
+        let my_data_own = my_data.clone();
         let my_data = Arc::new(my_data);
 
         task_launcher(
             queues,
             active_peers.clone(),
             my_data.clone(),
+            my_data_own,
             sock4.clone(),
             sock6.clone(),
+            false,
+            PathBuf::from("/home/splash/files/dls"),
         );
 
         /*jch */
@@ -985,20 +999,24 @@ mod tests {
         let action_queue = Arc::clone(&queues.2);
         let action_queue_state = Arc::clone(&queues.6);
 
-        let mut my_data = Peer::new();
+        let mut my_data= Peer::new();
         my_data.set_name("nist".to_string());
+        let my_data_own = my_data.clone();
         let my_data = Arc::new(my_data);
 
         task_launcher(
             queues,
             active_peers.clone(),
             my_data.clone(),
+            my_data_own,
             sock4.clone(),
             sock6.clone(),
+            false,
+            PathBuf::from("/home/splash/files/dls"),
         );
 
         /*jch */
-        let server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+        let _server_sock_addr: SocketAddr = "81.194.27.155:8443".parse().unwrap();
         // let sock_addr: SocketAddr = "[2001:660:3301:9200::51c2:1b9b]:8443".parse().unwrap();
         /*yoan */
         // let sock_addr: SocketAddr ="86.246.24.173:63801".parse().unwrap();
@@ -1028,14 +1046,6 @@ mod tests {
         // let sock_addr : SocketAddr = "90.3.112.55:36546".parse().unwrap();
         // let sock_addr_vec = vec![90, 3, 112, 55, 142, 194];
 
-        keep_alive_to_peer(
-            action_queue.clone(),
-            action_queue_state.clone(),
-            server_sock_addr,
-            my_data.clone(),
-            /*en nanosecs */
-            1_000_000_000,
-        );
         sleep(Duration::from_secs(2)).await;
 
         try_nat_traversal_with(

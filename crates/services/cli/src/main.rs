@@ -12,6 +12,7 @@ use lib_network::{
 use lib_web::discovery;
 use log::{error, info};
 use owo_colors::OwoColorize;
+use std::{path::PathBuf, thread::sleep};
 use std::{fs::File, io::Write, net::SocketAddr, sync::Arc};
 use tokio::{self, net::UdpSocket};
 
@@ -52,6 +53,10 @@ enum Commands {
         /// Default value is ./dump
         #[arg(short, long)]
         output: Option<String>,
+    },
+    Export {
+        #[arg(short, long)]
+        path: String,
     },
 }
 
@@ -130,7 +135,7 @@ async fn main() -> Result<()> {
                     bail!("Failed to bind IPv4 address : {e}")
                 }
             }
-            let addr6 = UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 40000)).await;
+            let addr6 = UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0)).await;
             let sock6: Arc<UdpSocket>;
             match addr6 {
                 Ok(a) => sock6 = Arc::new(a),
@@ -171,14 +176,18 @@ async fn main() -> Result<()> {
 
             let mut my_data = Peer::new();
             my_data.set_name("nist".to_string());
+            let my_data_own = my_data.clone();
             let my_data = Arc::new(my_data);
 
             task_launcher(
                 queues,
                 active_peers.clone(),
                 my_data.clone(),
+                my_data_own,
                 sock4.clone(),
                 sock6.clone(),
+                false,
+                PathBuf::from("/home/splash/files/dls"),
             );
 
             let sock_addr: SocketAddr;
@@ -328,6 +337,82 @@ async fn main() -> Result<()> {
                     std::process::exit(0);
                 }
             }
+        }
+        Commands::Export { path } => {
+            let path = PathBuf::from(path);
+
+            let addr4 = UdpSocket::bind("0.0.0.0:0").await;
+            let sock4: Arc<UdpSocket>;
+            match addr4 {
+                Ok(a) => sock4 = Arc::new(a),
+                Err(e) => {
+                    error!("Failed to bind IPv4 address : {e}");
+                    bail!("Failed to bind IPv4 address : {e}")
+                }
+            }
+            let addr6 = UdpSocket::bind(SocketAddr::new("::1".parse().unwrap(), 0)).await;
+            let sock6: Arc<UdpSocket>;
+            match addr6 {
+                Ok(a) => sock6 = Arc::new(a),
+                Err(e) => {
+                    error!("Failed to bind IPv6 address : {e}");
+                    bail!("Failed to bind IPv6 address : {e}")
+                }
+            }
+
+            let server_sock_addr4: SocketAddr = "81.194.27.155:8443".parse().unwrap();
+            let queues = build_queues();
+            let active_peers = ActivePeers::build_mutex();
+
+            let (
+                _receive_queue,
+                _send_queue,
+                action_queue,
+                process_queue,
+                _pending_ids,
+                _receive_queue_state,
+                action_queue_state,
+                _send_queue_state,
+                _process_queue_state,
+                process_queue_readers_state,
+            ) = (
+                Arc::clone(&queues.0),
+                Arc::clone(&queues.1),
+                Arc::clone(&queues.2),
+                Arc::clone(&queues.3),
+                Arc::clone(&queues.4),
+                Arc::clone(&queues.5),
+                Arc::clone(&queues.6),
+                Arc::clone(&queues.7),
+                Arc::clone(&queues.8),
+                Arc::clone(&queues.9),
+            );
+
+            let mut my_data = Peer::new();
+            my_data.set_name("nist".to_string());
+            let my_data_own = my_data.clone();
+            let my_data = Arc::new(my_data);
+
+            handshake(
+                process_queue.clone(),
+                process_queue_readers_state.clone(),
+                action_queue.clone(),
+                action_queue_state.clone(),
+                server_sock_addr4,
+                my_data.clone(),
+            );
+
+            task_launcher(
+                queues,
+                active_peers.clone(),
+                my_data.clone(),
+                my_data_own,
+                sock4.clone(),
+                sock6.clone(),
+                true,
+                path,
+            );
+            sleep(std::time::Duration::from_secs(9999));
         }
     }
     std::process::exit(0);

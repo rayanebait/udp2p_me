@@ -89,18 +89,25 @@ pub fn handle_packet(
             if packet.is_response() {
                 handle_response_packet(packet, socket_addr, pending_ids)
             } else {
-                Err(HandlingError::InvalidPacketError)
+                if packet.is(PacketType::NatTraversal){
+                    handle_request_packet(packet, socket_addr, pending_ids)
+                }else {
+                    Err(HandlingError::InvalidPacketError)
+                }
+
             }
         }
         /*Packet is a request */
         Err(CongestionHandlerError::NoPacketWithIdError) => {
             if packet.is_response() {
+                debug!("HERE1");
                 Ok(Action::SendErrorReply(
                     *packet.get_id(),
                     Some(b"Invalid id".to_vec()),
                     socket_addr,
                 ))
             } else {
+                debug!("HERE");
                 handle_request_packet(packet, socket_addr, pending_ids)
             }
         }

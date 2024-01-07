@@ -34,8 +34,11 @@ pub fn task_launcher(
     ),
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: Arc<Peer>,
+    my_data_own: Peer,
     sock4: Arc<UdpSocket>,
     sock6: Arc<UdpSocket>,
+    exporting: bool,
+    path: std::path::PathBuf
 ) {
     let (
         receive_queue,
@@ -102,6 +105,7 @@ pub fn task_launcher(
             Arc::clone(&action_queue_state),
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
+
         );
         process_task(
             Arc::clone(&action_queue),
@@ -109,8 +113,9 @@ pub fn task_launcher(
             Arc::clone(&process_queue),
             Arc::clone(&process_queue_state),
             Arc::clone(&active_peers),
-            Arc::clone(&my_data),
-            // Arc::clone(&map)
+            my_data_own,
+            exporting,
+            path
         );
 
         sender(

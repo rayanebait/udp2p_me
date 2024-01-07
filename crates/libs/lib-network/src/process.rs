@@ -1,8 +1,11 @@
 use core::panic;
 
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
+use lib_file::mk_fs::MktFsNode;
 use log::{debug, error};
 use crate::action::Action;
 
@@ -18,7 +21,7 @@ pub fn process_task(
     process_queue: Arc<RwLock<Queue<Action>>>,
     process_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
-    my_data: Arc<Peer>,
+    mut my_data: Peer,
     // to_export: Arc<HashMap<[u8;32], &MktFsNode>>,
     //tree: ?
     //For each peer build a physical tree and fill it ?
@@ -27,37 +30,79 @@ pub fn process_task(
     //send datum.
     //hash_map:?
     //self_data:?
+    exporting: bool,
+    path: PathBuf
 ) {
     //Should pop only if too full ? For subtasks to have time to read
     tokio::spawn(async move {
-        loop {
-            match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
-                Some(action) => {
-                    /*action queue is not empty get an action and handle it*/
-                    // println!("process: {:?}\n", action);
-                    process_action(
-                        action.clone(),
-                        Arc::clone(&action_queue),
-                        Arc::clone(&action_queue_state),
-                        Arc::clone(&active_peers),
-                        Arc::clone(&my_data),
-                    );
-                    debug!("{:?}", action)
-                    /*return the action required */
-                }
-                None => {
-                    /*
-                    action queue is empty wait for the activity of
-                    the receive queue
-                    */
-
-                    // println!("process wait");
-                    QueueState::set_empty_queue(Arc::clone(&process_queue_state));
-                    process_queue_state.wait();
-                    continue
+        if exporting == true {
+            let tree = MktFsNode::try_from_path(&path, 1200, 100).unwrap();
+            my_data.set_hash(Some(tree.hash.clone()));
+            let map = tree.to_hashmap();
+            loop {
+                match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
+                    Some(action) => {
+                        /*action queue is not empty get an action and handle it*/
+                        // println!("process: {:?}\n", action);
+                        process_action(
+                            action.clone(),
+                            Arc::clone(&action_queue),
+                            Arc::clone(&action_queue_state),
+                            Arc::clone(&active_peers),
+                            &my_data,
+                            &map,
+                            exporting
+                        );
+                        debug!("{:?}", action)
+                        /*return the action required */
                     }
+                    None => {
+                        /*
+                        action queue is empty wait for the activity of
+                        the receive queue
+                        */
+
+                        // println!("process wait");
+                        QueueState::set_empty_queue(Arc::clone(&process_queue_state));
+                        process_queue_state.wait();
+                        continue
+                        }
+                }
+            }
+        } else {
+            let map = HashMap::new();
+            loop {
+                match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
+                    Some(action) => {
+                        /*action queue is not empty get an action and handle it*/
+                        // println!("process: {:?}\n", action);
+                        process_action(
+                            action.clone(),
+                            Arc::clone(&action_queue),
+                            Arc::clone(&action_queue_state),
+                            Arc::clone(&active_peers),
+                            &my_data,
+                            &map,
+                            exporting
+                        );
+                        debug!("{:?}", action)
+                        /*return the action required */
+                    }
+                    None => {
+                        /*
+                        action queue is empty wait for the activity of
+                        the receive queue
+                        */
+
+                        // println!("process wait");
+                        QueueState::set_empty_queue(Arc::clone(&process_queue_state));
+                        process_queue_state.wait();
+                        continue
+                        }
+                }
             }
         }
+
     });
 }
 
@@ -66,7 +111,7 @@ pub fn process_action(
     action_queue: Arc<Mutex<Queue<Action>>>,
     action_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
-    my_data: Arc<Peer>, //Pour store public key et root ->
+    my_data: &Peer, //Pour store public key et root ->
                         // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
                         //peer.set_public_key...
                         //peer.set_root..
@@ -75,6 +120,8 @@ pub fn process_action(
                         //    peers: Vec<Peer>,
                         //    map: Hashmap<SocketAddr, Peer>
                         //}
+    tree: &HashMap<[u8;32], &MktFsNode>,
+    exporting: bool
 ) {
     let my_name = my_data.get_name().unwrap().as_bytes().to_vec();
     match action {
@@ -174,9 +221,26 @@ pub fn process_action(
             }
             return;
         }
-        Action::ProcessGetDatum(id, _hash, sock_addr) => {
-            Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
-            QueueState::set_non_empty_queue(action_queue_state.clone());
+        Action::ProcessGetDatum(id, hash, sock_addr) => {
+            if exporting {
+                let datum = match tree.get(&hash){
+                            Some(node)=> node.to_bytes(1024),
+                            None=> vec![],
+                };
+                if datum.is_empty() {
+                    Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
+                    QueueState::set_non_empty_queue(action_queue_state.clone());
+                } else {
+                    Queue::lock_and_push(
+                        action_queue.clone(),
+                        Action::SendDatumWithHash(id, *&hash,
+                             datum , sock_addr)
+                    )
+                }
+            } else {
+                Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
+                QueueState::set_non_empty_queue(action_queue_state.clone());
+            }
             /*to do */
             return;
         }

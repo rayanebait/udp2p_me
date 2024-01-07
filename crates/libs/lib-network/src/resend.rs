@@ -55,7 +55,20 @@ pub fn resend_task(
                     server_socket_addr6,
                 ));
             }
-            Queue::lock_and_push_mul(sending_queue.clone(), nat_trav_packets);
+            nat_trav_packets.sort_by(|a, b| a.1.cmp(&b.1) );
+            let mut nat_trav_packets_norepeat = vec![];
+            for i in 0..nat_trav_packets.len() {
+                if nat_trav_packets_norepeat.is_empty(){
+                    nat_trav_packets_norepeat.push(nat_trav_packets[i].clone());
+                    continue
+                }
+                if nat_trav_packets[i].1 == nat_trav_packets[i-1].1{
+                    continue
+                }
+                nat_trav_packets_norepeat.push(nat_trav_packets[i].clone());
+            }
+
+            Queue::lock_and_push_mul(sending_queue.clone(), nat_trav_packets_norepeat);
         }
     });
 }

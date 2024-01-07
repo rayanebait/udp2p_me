@@ -412,7 +412,7 @@ impl Packet {
     pub fn is_response(&self) -> bool {
         let packet_type = self.packet_type as u8;
         match packet_type {
-            0..=6 => return false,
+            0..=7 => return false,
             _ => return true,
         }
     }
