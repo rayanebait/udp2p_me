@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -6,8 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
-
-
 
 #[derive(Error, Debug)]
 pub enum PeerError {
@@ -248,9 +246,6 @@ impl ActivePeers {
         };
         match active_peers.addr_map.get(&sock_addr) {
             Some(stored_name) => {
-                // println!("KEEP PEER ALIVE {:?}", peer);
-                /*Keep alive */
-                info!("EXIST");
                 if name != *stored_name {
                     return Err(PeerError::NameChanged);
                 }

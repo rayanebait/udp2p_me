@@ -6,7 +6,7 @@ UDP2P is a peer to peer file sharing system. It uses UDP to transfer data betwee
 
 ## How to use
 
-After building the binaries with `cargo build`, the cli tool can be use as follows.
+After building the binary with `cargo build`, the cli tool can be used as follows.
 
 - To fetch all the connected peers and their information from the REST server :
 ```
@@ -30,7 +30,7 @@ The download command will detect if the hash is pointing to a directory or a fil
     │   ├── lib-network
     │   └── lib-web
     └── services
-        ├── cli
+        └── cli
 ```
 
 ### Libraries
