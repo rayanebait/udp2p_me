@@ -18,6 +18,13 @@ udp2p peers -u <url of rest server>
 udp2p download -p <peer address> -d <hash> -o <output path>
 ```
 
+- To export a tree :
+```
+udp2p export --path <tree path>
+```
+
+
+
 The download command will detect if the hash is pointing to a directory or a file and will either show the file system structure of the directory or download the file. By default, if no hash is provided, the client will look for the root hash and if no output path is provided, it downloads the file in `./dump`.
 
 ## Project organisation
