@@ -309,7 +309,7 @@ impl PacketBuilder {
         let datum_packet = PacketBuilder::new()
             .set_id(*id)
             .body(body)
-            .packet_type(PacketType::GetDatum)
+            .packet_type(PacketType::Datum)
             .build();
 
         datum_packet.unwrap()
@@ -318,7 +318,7 @@ impl PacketBuilder {
         let nodatum_packet = PacketBuilder::new()
             .set_id(*id)
             .body(vec![])
-            .packet_type(PacketType::GetDatum)
+            .packet_type(PacketType::NoDatum)
             .build();
 
         nodatum_packet.unwrap()

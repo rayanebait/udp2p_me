@@ -38,6 +38,7 @@ pub fn process_task(
         if exporting == true {
             let tree = MktFsNode::try_from_path(&path, 1200, 100).unwrap();
             my_data.set_hash(Some(tree.hash.clone()));
+            debug!("{:?}", tree);
             let map = tree.to_hashmap();
             loop {
                 match Queue::write_lock_and_get(Arc::clone(&process_queue)) {
@@ -223,6 +224,7 @@ pub fn process_action(
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
             if exporting {
+                debug!("BEFOREGETDATUM");
                 let datum = match tree.get(&hash){
                             Some(node)=> node.to_bytes(1024),
                             None=> vec![],
@@ -237,6 +239,7 @@ pub fn process_action(
                              datum , sock_addr)
                     )
                 }
+                debug!("AFTERGETDATUM");
             } else {
                 Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
                 QueueState::set_non_empty_queue(action_queue_state.clone());
