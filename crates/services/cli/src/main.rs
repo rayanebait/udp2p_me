@@ -342,6 +342,7 @@ async fn main() -> Result<()> {
             let path = PathBuf::from(path);
 
             let addr4 = UdpSocket::bind("0.0.0.0:0").await;
+            info!("{addr4:?}");
             let sock4: Arc<UdpSocket>;
             match addr4 {
                 Ok(a) => sock4 = Arc::new(a),

@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use log::{info, error, debug};
+use log::{info, error};
 use std::time::{Duration, Instant};
 
 // use crate::{peer_data::*, packet};
@@ -506,12 +506,12 @@ impl PendingIds {
             pending_ids_guard.id_to_addr.iter_mut()
         {
             match *attempts {
-                3 | 5=>{
+                3 | 5 | 7=>{
                     *attempts+=1;
                     id_to_send_nat_trav.push(*id);
                     id_to_resend.push(*id);
                 },
-                8.. => {
+                10.. => {
                     id_to_pop.push(*id);
                 }
                 _ => match packet_type {
