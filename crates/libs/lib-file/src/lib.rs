@@ -2,7 +2,7 @@ pub mod mk_fs {
     //! This module contains functions to manipulate files.
     //! Its goal is to provide all utilities to extract data from files and prepare it to be exported to the REST server and sent over the network.
     use anyhow::{bail, Context, Result};
-    use log::{debug};
+    use log::debug;
     use log::error;
     use sha2::{Digest, Sha256};
     use std::{
@@ -224,6 +224,10 @@ pub mod mk_fs {
                 let mut hasher = Sha256::new();
                 hasher.update([2]);
                 for c in children.iter() {
+                    let mut path = c.path.as_os_str().as_bytes().to_vec();
+                    path.extend_from_slice(&[0u8; 32]);
+                    path.truncate(32);
+                    hasher.update(&mut path);
                     hasher.update(c.hash);
                 }
                 let mut hash = <[u8; 32]>::default();
