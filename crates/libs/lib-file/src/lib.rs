@@ -281,12 +281,12 @@ pub mod mk_fs {
                     let n_bytes = file.read_at(&mut buf, *offset).unwrap();
                     debug!("file read");
                     buf.truncate(n_bytes);
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![0u8]);
                     result.append(&mut buf);
                 }
                 MktFsNodeType::BIGFILE { path: _ } => {
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![1u8]);
                     match &self.children {
                         Some(children) => {
@@ -298,7 +298,7 @@ pub mod mk_fs {
                     }
                 }
                 MktFsNodeType::DIRECTORY { path: _ } => {
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![2u8]);
                     match &self.children {
                         Some(children) => {
