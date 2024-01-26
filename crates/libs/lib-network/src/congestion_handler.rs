@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use log::{error, debug};
+use log::error;
 use std::time::{Duration, Instant};
 
 // use crate::{peer_data::*, packet};
@@ -60,7 +60,7 @@ impl QueueState {
             start_or_wait = notif_var.wait(start_or_wait).unwrap();
         }
     }
-    pub fn wait_timeout_ms(&self, timeout: u64)->Result<(), CongestionHandlerError>{
+    pub fn wait_timeout_ms(&self, timeout: u64) -> Result<(), CongestionHandlerError> {
         /*
             Get the lock once and give it to a Condvar.
             The wait method atomically unlocks the mutex and waits
@@ -75,22 +75,21 @@ impl QueueState {
             need to pair it with a variable change on the Mutex
         */
         while !*start_or_wait {
-            start_or_wait = match notif_var.wait_timeout(start_or_wait, Duration::from_millis(timeout)){
-                Ok(result)=>{
-                    if result.1.timed_out(){
-                        debug!("here");
-                        return Err(CongestionHandlerError::TimeOutError)
+            start_or_wait =
+                match notif_var.wait_timeout(start_or_wait, Duration::from_millis(timeout)) {
+                    Ok(result) => {
+                        if result.1.timed_out() {
+                            return Err(CongestionHandlerError::TimeOutError);
+                        }
+                        result.0
                     }
-                    result.0
-                },
-                Err(_)=> {
-                    error!("poison in QueueState");
-                    panic!("Poison")
+                    Err(_) => {
+                        error!("poison in QueueState");
+                        panic!("Poison")
+                    }
                 }
-            }
         }
         Ok(())
-
     }
 
     pub fn set_empty_queue(queue_state: Arc<QueueState>) {
@@ -299,7 +298,7 @@ impl std::fmt::Display for CongestionHandlerError {
             CongestionHandlerError::AddrAndIdDontMatchError => {
                 write!(f, "Id and address from packet don't match")
             }
-            CongestionHandlerError::TimeOutError=>{
+            CongestionHandlerError::TimeOutError => {
                 write!(f, "Wait timed out")
             }
         }
@@ -505,17 +504,17 @@ impl PendingIds {
             pending_ids_guard.id_to_addr.iter_mut()
         {
             match *attempts {
-                5 | 10 | 15 =>{
-                    *attempts+=1;
+                5 | 10 | 15 => {
+                    *attempts += 1;
                     id_to_send_nat_trav.push(*id);
-                },
+                }
                 20.. => {
                     id_to_pop.push(*id);
-                },
-                _=> match packet_type {
+                }
+                _ => match packet_type {
                     PacketType::NatTraversalRequest => id_to_pop.push(*id),
-                    _=> {
-                        *attempts+=1;
+                    _ => {
+                        *attempts += 1;
                         id_to_resend.push(*id);
                     }
                 },
@@ -531,14 +530,14 @@ impl PendingIds {
         for id in id_to_pop {
             pending_ids_guard.id_to_packet.remove(&id);
             pending_ids_guard.id_to_addr.remove(&id).unwrap();
-        }        
+        }
 
         let mut packet_to_resend = vec![];
-            for id in &id_to_resend {
-                let packet_for_addr = pending_ids_guard.id_to_packet.get(id).unwrap().clone();
-                addr_to_send_nat_trav.push(*&packet_for_addr.1);
-                packet_to_resend.push(packet_for_addr);
-            }
+        for id in &id_to_resend {
+            let packet_for_addr = pending_ids_guard.id_to_packet.get(id).unwrap().clone();
+            addr_to_send_nat_trav.push(*&packet_for_addr.1);
+            packet_to_resend.push(packet_for_addr);
+        }
 
         // println!("packet to resend {:?}", packet_to_resend);
 

@@ -5,9 +5,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::action::Action;
 use lib_file::mk_fs::MktFsNode;
 use log::{debug, error};
-use crate::action::Action;
 
 use crate::peer::*;
 
@@ -31,7 +31,7 @@ pub fn process_task(
     //hash_map:?
     //self_data:?
     exporting: bool,
-    path: PathBuf
+    path: PathBuf,
 ) {
     //Should pop only if too full ? For subtasks to have time to read
     tokio::spawn(async move {
@@ -52,7 +52,7 @@ pub fn process_task(
                             Arc::clone(&active_peers),
                             &my_data,
                             &map,
-                            exporting
+                            exporting,
                         );
                         debug!("{:?}", action)
                         /*return the action required */
@@ -66,8 +66,8 @@ pub fn process_task(
                         // println!("process wait");
                         QueueState::set_empty_queue(Arc::clone(&process_queue_state));
                         process_queue_state.wait();
-                        continue
-                        }
+                        continue;
+                    }
                 }
             }
         } else {
@@ -84,7 +84,7 @@ pub fn process_task(
                             Arc::clone(&active_peers),
                             &my_data,
                             &map,
-                            exporting
+                            exporting,
                         );
                         debug!("{:?}", action)
                         /*return the action required */
@@ -98,12 +98,11 @@ pub fn process_task(
                         // println!("process wait");
                         QueueState::set_empty_queue(Arc::clone(&process_queue_state));
                         process_queue_state.wait();
-                        continue
-                        }
+                        continue;
+                    }
                 }
             }
         }
-
     });
 }
 
@@ -113,19 +112,19 @@ pub fn process_action(
     action_queue_state: Arc<QueueState>,
     active_peers: Arc<Mutex<ActivePeers>>,
     my_data: &Peer, //Pour store public key et root ->
-                        // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
-                        //peer.set_public_key...
-                        //peer.set_root..
-                        //active_peers: Arc<ActivePeers>
-                        //struct ActivePeers {
-                        //    peers: Vec<Peer>,
-                        //    map: Hashmap<SocketAddr, Peer>
-                        //}
-    tree: &HashMap<[u8;32], &MktFsNode>,
-    exporting: bool
+    // to_export: Arc<HashMap<[u8;32], &MktFsNode>>       //hashmap: sockaddr vers peer
+    //peer.set_public_key...
+    //peer.set_root..
+    //active_peers: Arc<ActivePeers>
+    //struct ActivePeers {
+    //    peers: Vec<Peer>,
+    //    map: Hashmap<SocketAddr, Peer>
+    //}
+    tree: &HashMap<[u8; 32], &MktFsNode>,
+    exporting: bool,
 ) {
     let my_name = my_data.get_name().unwrap().as_bytes().to_vec();
-    let my_hash : Option<[u8; 32]>= my_data.get_root_hash();
+    let my_hash: Option<[u8; 32]> = my_data.get_root_hash();
     match action {
         Action::ProcessNoOp(_sock_addr) => {
             /*DONE */
@@ -225,16 +224,15 @@ pub fn process_action(
         }
         Action::ProcessGetDatum(id, hash, sock_addr) => {
             if exporting {
-                debug!("BEFOREGETDATUM");
-                let datum = match tree.get(&hash){
-                            Some(node)=>{
-                                debug!("Found datum");
-                                node.to_bytes(1024)
-                            }
-                            None=> {
-                                debug!("NoDatum");
-                                vec![]
-                            },
+                let datum = match tree.get(&hash) {
+                    Some(node) => {
+                        debug!("Found datum");
+                        node.to_bytes(1024)
+                    }
+                    None => {
+                        debug!("NoDatum");
+                        vec![]
+                    }
                 };
                 if datum.is_empty() {
                     Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
@@ -242,11 +240,9 @@ pub fn process_action(
                 } else {
                     Queue::lock_and_push(
                         action_queue.clone(),
-                        Action::SendDatumWithHash(id, *&hash,
-                             datum , sock_addr)
+                        Action::SendDatumWithHash(id, *&hash, datum, sock_addr),
                     )
                 }
-                debug!("AFTERGETDATUM");
             } else {
                 Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));
                 QueueState::set_non_empty_queue(action_queue_state.clone());
