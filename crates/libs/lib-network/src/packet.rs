@@ -1,4 +1,4 @@
-// use log::error;
+use log::debug;
 use prelude::*;
 use std::fmt::Display;
 
@@ -398,8 +398,8 @@ impl Packet {
     pub fn get_body(&self) -> &Vec<u8> {
         &self.body
     }
-    pub fn get_body_length(&self) -> &usize {
-        &self.length
+    pub fn get_body_length(&self) -> usize {
+        self.length
     }
     pub fn get_packet_type(&self) -> &PacketType {
         &self.packet_type
@@ -672,11 +672,12 @@ impl Packet {
     /*Verify the hash of a Packet during p2p export/import */
     /*Should also take a hash  */
     pub fn valid_hash(&self) -> bool {
+        debug!("PACKET HASH CHECKING : {self:?}");
         let body = self.get_body();
         let given_hash = &body.as_slice()[0..32];
 
         let calculated_hash = {
-            let data = &body.as_slice()[32..(body.len())];
+            let data = &body.as_slice()[32..self.get_body_length()];
             let mut hasher = Sha256::new();
             hasher.update(data);
 

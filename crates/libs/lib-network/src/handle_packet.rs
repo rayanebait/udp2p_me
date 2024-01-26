@@ -1,8 +1,6 @@
-
 use std::net::SocketAddr;
 
 use std::sync::{Arc, Mutex, RwLock};
-
 
 use log::{debug, error};
 
@@ -27,7 +25,6 @@ pub fn handle_packet_task(
 ) {
     tokio::spawn(async move {
         loop {
-
             let action_or_error = match Queue::lock_and_pop(Arc::clone(&receive_queue)) {
                 Some((packet, sock_addr)) =>
                 /*receive queue is not empty get a packet and handle it*/
@@ -53,7 +50,7 @@ pub fn handle_packet_task(
                     QueueState::set_empty_queue(Arc::clone(&receive_queue_state));
                     debug!("handle wait");
                     receive_queue_state.wait();
-                    continue
+                    continue;
                 }
             };
 
@@ -64,15 +61,15 @@ pub fn handle_packet_task(
                     Queue::write_lock_and_push(Arc::clone(&process_queue), action.clone());
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
-                    continue
+                    continue;
                 }
                 Err(HandlingError::InvalidPacketError) => {
                     debug!("[handle packet task] Invalid packet error");
-                    return
+                    return;
                 }
                 Err(e) => {
                     error!("{:?}", e);
-                    return
+                    return;
                 }
             };
         }
@@ -92,12 +89,11 @@ pub fn handle_packet(
             if packet.is_response() {
                 handle_response_packet(packet, socket_addr, pending_ids)
             } else {
-                if packet.is(PacketType::NatTraversal){
+                if packet.is(PacketType::NatTraversal) {
                     handle_request_packet(packet, socket_addr, pending_ids)
-                }else {
+                } else {
                     Err(HandlingError::InvalidPacketError)
                 }
-
             }
         }
         /*Packet is a request */
@@ -153,7 +149,7 @@ fn handle_request_packet(
                     0 => None,
                     _ => Some(extensions),
                 };
-                let name = packet.get_body().as_slice()[4..*packet.get_body_length()].to_vec();
+                let name = packet.get_body().as_slice()[4..packet.get_body_length()].to_vec();
                 /*id is transmitted to be reused in a send hello reply */
                 Ok(Action::ProcessHello(*id, extensions, name, socket_addr))
             }
@@ -237,7 +233,7 @@ fn handle_response_packet(
                 0 => None,
                 _ => Some(extensions),
             };
-            let name = packet.get_body().as_slice()[4..*packet.get_body_length()].to_vec();
+            let name = packet.get_body().as_slice()[4..packet.get_body_length()].to_vec();
             Ok(Action::ProcessHelloReply(extensions, name, socket_addr))
         }
         PacketType::PublicKeyReply => {
@@ -276,7 +272,7 @@ fn handle_response_packet(
                 packet.get_body().to_owned(),
                 socket_addr,
             )),
-            false =>{
+            false => {
                 error!("Invalid hash?");
                 Ok(Action::ProcessDatum(
                     packet.get_body().to_owned(),
