@@ -125,6 +125,7 @@ pub fn process_action(
     exporting: bool
 ) {
     let my_name = my_data.get_name().unwrap().as_bytes().to_vec();
+    let my_hash : Option<[u8; 32]>= my_data.get_root_hash();
     match action {
         Action::ProcessNoOp(_sock_addr) => {
             /*DONE */
@@ -195,7 +196,7 @@ pub fn process_action(
                 Ok(()) => {
                     Queue::lock_and_push(
                         Arc::clone(&action_queue),
-                        Action::SendRootReply(id, root, sock_addr),
+                        Action::SendRootReply(id, my_hash, sock_addr),
                     );
                     QueueState::set_non_empty_queue(Arc::clone(&action_queue_state));
                 }
@@ -226,8 +227,14 @@ pub fn process_action(
             if exporting {
                 debug!("BEFOREGETDATUM");
                 let datum = match tree.get(&hash){
-                            Some(node)=> node.to_bytes(1024),
-                            None=> vec![],
+                            Some(node)=>{
+                                debug!("Found datum");
+                                node.to_bytes(1024)
+                            }
+                            None=> {
+                                debug!("NoDatum");
+                                vec![]
+                            },
                 };
                 if datum.is_empty() {
                     Queue::lock_and_push(action_queue.clone(), Action::SendNoDatum(id, sock_addr));

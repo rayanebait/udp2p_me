@@ -273,7 +273,13 @@ fn handle_response_packet(
                 packet.get_body().to_owned(),
                 socket_addr,
             )),
-            false => Err(HandlingError::InvalidHashError),
+            false =>{
+                error!("Invalid hash?");
+                Ok(Action::ProcessDatum(
+                    packet.get_body().to_owned(),
+                    socket_addr,
+                ))
+            }
         },
         PacketType::NoDatum => Ok(Action::ProcessNoDatum(socket_addr)),
         _ => return Err(HandlingError::InvalidPacketError),
