@@ -224,6 +224,10 @@ pub mod mk_fs {
                 let mut hasher = Sha256::new();
                 hasher.update([2]);
                 for c in children.iter() {
+                    let mut path = c.path.as_os_str().as_bytes().to_vec();
+                    path.extend_from_slice(&[0u8; 32]);
+                    path.truncate(32);
+                    hasher.update(&mut path);
                     hasher.update(c.hash);
                 }
                 let mut hash = <[u8; 32]>::default();
