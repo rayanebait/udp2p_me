@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
-use log::error;
+use log::{info, error, debug};
 use std::time::{Duration, Instant};
 
 // use crate::{peer_data::*, packet};
@@ -376,6 +376,8 @@ impl PendingIds {
     ) {
         if packet.is(*&PacketType::Error) {
             return;
+        }else if packet.is(*&PacketType::NatTraversalRequest){
+            return;
         } else if packet.is_response() {
             return;
         }
@@ -529,7 +531,7 @@ impl PendingIds {
         // );
 
         for id in id_to_pop {
-            error!("Packet with id {id:?} timed out");
+            info!("Packet with id {id:?} timed out");
             pending_ids_guard.id_to_packet.remove(&id);
             pending_ids_guard.id_to_addr.remove(&id).unwrap();
         }

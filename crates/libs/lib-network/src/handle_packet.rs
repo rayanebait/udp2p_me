@@ -170,6 +170,7 @@ fn handle_request_packet(
         }
         PacketType::Root => {
             if body.len() < 32 {
+                debug!("{packet:?}");
                 return Ok(Action::SendErrorReply(
                     *id,
                     Some(b"root is too short".to_vec()),
