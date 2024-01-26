@@ -4,7 +4,7 @@ use hex;
 use lib_network::{
     action::*,
     congestion_handler::*,
-    import_export::{download_from, handshake, peek_until_root_reply_from},
+    import_export::{download_from, handshake, keep_alive_to_peer, peek_until_root_reply_from},
     peer::*,
     store::*,
     task_launcher_canceller::*,
@@ -400,6 +400,13 @@ async fn main() -> Result<()> {
                 action_queue_state.clone(),
                 server_sock_addr4,
                 my_data.clone(),
+            );
+            keep_alive_to_peer(
+                action_queue.clone(),
+                action_queue_state.clone(),
+                server_sock_addr4,
+                my_data.clone(),
+                30_000
             );
 
             task_launcher(

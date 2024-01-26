@@ -277,9 +277,9 @@ fn handle_response_packet(
                 socket_addr,
             )),
             false =>{
-                error!("Invalid hash?");
-                Ok(Action::ProcessDatum(
-                    packet.get_body().to_owned(),
+                error!("Invalid hash");
+                Ok(Action::SendError(
+                    b"Invalid hash".to_vec(),
                     socket_addr,
                 ))
             }
