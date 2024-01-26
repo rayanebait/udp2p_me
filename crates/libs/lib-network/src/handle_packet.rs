@@ -99,9 +99,9 @@ pub fn handle_packet(
         /*Packet is a request */
         Err(CongestionHandlerError::NoPacketWithIdError) => {
             if packet.is_response() {
-                Ok(Action::SendErrorReply(
-                    *packet.get_id(),
-                    Some(b"Invalid id".to_vec()),
+                error!("{packet:?}");
+                Ok(Action::SendError(
+                    b"Invalid id".to_vec(),
                     socket_addr,
                 ))
             } else {
@@ -170,10 +170,9 @@ fn handle_request_packet(
         }
         PacketType::Root => {
             if body.len() < 32 {
-                debug!("{packet:?}");
-                return Ok(Action::SendErrorReply(
-                    *id,
-                    Some(b"root is too short".to_vec()),
+                error!("{packet:?}");
+                return Ok(Action::SendError(
+                    b"root is too short".to_vec(),
                     socket_addr,
                 ));
             } else {
