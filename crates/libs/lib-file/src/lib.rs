@@ -2,7 +2,7 @@ pub mod mk_fs {
     //! This module contains functions to manipulate files.
     //! Its goal is to provide all utilities to extract data from files and prepare it to be exported to the REST server and sent over the network.
     use anyhow::{bail, Context, Result};
-    use log::{debug};
+    use log::debug;
     use log::error;
     use sha2::{Digest, Sha256};
     use std::{
@@ -281,12 +281,12 @@ pub mod mk_fs {
                     let n_bytes = file.read_at(&mut buf, *offset).unwrap();
                     debug!("file read");
                     buf.truncate(n_bytes);
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![0u8]);
                     result.append(&mut buf);
                 }
                 MktFsNodeType::BIGFILE { path: _ } => {
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![1u8]);
                     match &self.children {
                         Some(children) => {
@@ -298,7 +298,7 @@ pub mod mk_fs {
                     }
                 }
                 MktFsNodeType::DIRECTORY { path: _ } => {
-                    result.append(&mut self.hash.to_vec());
+                    // result.append(&mut self.hash.to_vec());
                     result.append(&mut vec![2u8]);
                     match &self.children {
                         Some(children) => {

@@ -1,3 +1,4 @@
+use log::error;
 use prelude::*;
 use std::fmt::Display;
 
@@ -671,6 +672,7 @@ impl Packet {
     /*Verify the hash of a Packet during p2p export/import */
     /*Should also take a hash  */
     pub fn valid_hash(&self) -> bool {
+        error!("PROBLEM PACKET {self:?}");
         let body = self.get_body();
         let given_hash = &body.as_slice()[0..32];
 
@@ -683,6 +685,8 @@ impl Packet {
             calculated_hash.copy_from_slice(hasher.finalize().as_slice());
             calculated_hash
         };
+
+        error!("HASHES : BODY {given_hash:?} CALCULATED {calculated_hash:?}");
 
         calculated_hash == given_hash
     }
