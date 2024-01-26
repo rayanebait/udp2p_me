@@ -675,7 +675,7 @@ impl Packet {
         let given_hash = &body.as_slice()[0..32];
 
         let calculated_hash = {
-            let data = &body.as_slice()[32..(body.len())];
+            let data = &body.as_slice()[32..*self.get_body_length()];
             let mut hasher = Sha256::new();
             hasher.update(data);
 

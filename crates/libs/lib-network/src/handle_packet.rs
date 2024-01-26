@@ -276,10 +276,12 @@ fn handle_response_packet(
             )),
             false =>{
                 error!("Invalid hash");
-                Ok(Action::ProcessDatum(
-                    packet.get_body().to_owned(),
-                    socket_addr,
-                ))
+                Ok(Action::SendError(
+                            b"Connection timedout,
+                                             proceed to handshake again.\n"
+                                .to_vec(),
+                            socket_addr,
+                        ))
             }
         },
         PacketType::NoDatum => Ok(Action::ProcessNoDatum(socket_addr)),
