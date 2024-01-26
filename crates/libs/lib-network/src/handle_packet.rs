@@ -10,6 +10,8 @@ use crate::action::*;
 use crate::congestion_handler::*;
 use crate::packet::*;
 // use crate::peer_data::PeerData;
+
+#[derive(Debug)]
 pub enum HandlingError {
     InvalidPacketError,
     InvalidHashError,
@@ -55,21 +57,22 @@ pub fn handle_packet_task(
                 }
             };
 
+            debug!("{:?}", action_or_error);
             match action_or_error {
                 Ok(action) => {
                     /* we have an action, push it to the queue*/
                     Queue::write_lock_and_push(Arc::clone(&process_queue), action.clone());
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_readers_state));
                     QueueState::set_non_empty_queue(Arc::clone(&process_queue_state));
-                    continue;
+                    continue
                 }
                 Err(HandlingError::InvalidPacketError) => {
                     debug!("[handle packet task] Invalid packet error");
-                    return;
+                    return
                 }
-                _ => {
-                    error!("Should not happen");
-                    panic!("Shouldn't happen")
+                Err(e) => {
+                    error!("{:?}", e);
+                    return
                 }
             };
         }
