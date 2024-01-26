@@ -60,7 +60,7 @@ enum Commands {
     },
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 15)]
 async fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();

@@ -505,11 +505,12 @@ impl PendingIds {
             pending_ids_guard.id_to_addr.iter_mut()
         {
             match *attempts {
-                2 | 4=>{
+                3 | 5=>{
                     *attempts+=1;
                     id_to_send_nat_trav.push(*id);
+                    id_to_resend.push(*id);
                 },
-                5.. => {
+                8.. => {
                     id_to_pop.push(*id);
                 },
                 _=> match packet_type {
@@ -529,6 +530,7 @@ impl PendingIds {
         // );
 
         for id in id_to_pop {
+            error!("Packet with id {id:?} timed out");
             pending_ids_guard.id_to_packet.remove(&id);
             pending_ids_guard.id_to_addr.remove(&id).unwrap();
         }        
