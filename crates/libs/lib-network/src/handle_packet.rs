@@ -103,14 +103,12 @@ pub fn handle_packet(
         /*Packet is a request */
         Err(CongestionHandlerError::NoPacketWithIdError) => {
             if packet.is_response() {
-                debug!("HERE1");
                 Ok(Action::SendErrorReply(
                     *packet.get_id(),
                     Some(b"Invalid id".to_vec()),
                     socket_addr,
                 ))
             } else {
-                debug!("HERE");
                 handle_request_packet(packet, socket_addr, pending_ids)
             }
         }

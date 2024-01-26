@@ -505,11 +505,11 @@ impl PendingIds {
             pending_ids_guard.id_to_addr.iter_mut()
         {
             match *attempts {
-                5 | 10 | 15 =>{
+                2 | 4=>{
                     *attempts+=1;
                     id_to_send_nat_trav.push(*id);
                 },
-                20.. => {
+                5.. => {
                     id_to_pop.push(*id);
                 },
                 _=> match packet_type {
